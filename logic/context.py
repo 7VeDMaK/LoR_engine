@@ -17,7 +17,7 @@ class RollContext:
     """
     source: 'Unit'
     target: Optional['Unit']
-    dice: 'Dice'
+    dice: Optional['Dice']
     final_value: int
     log: List[str] = field(default_factory=list)
 

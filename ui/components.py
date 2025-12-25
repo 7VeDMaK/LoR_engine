@@ -4,6 +4,26 @@ from core.library import Library
 from ui.styles import TYPE_ICONS, TYPE_COLORS
 
 
+# --- НОВАЯ ФУНКЦИЯ: ПЕРЕВОДЧИК СКРИПТОВ ---
+def _format_script_text(script_id: str, params: dict) -> str:
+    """Превращает технический ID скрипта в красивый текст для игрока."""
+
+    if script_id == "restore_hp":
+        amt = params.get("amount", 0)
+        return f"💚 Восстановить {amt} HP"
+
+    elif script_id == "apply_status":
+        status = params.get("status", "???").capitalize()
+        stack = params.get("stack", 0)
+        target = params.get("target", "target")
+        # Если цель "self" - добавляем пометку, иначе по умолчанию враг
+        tgt_str = " (на себя)" if target == "self" else ""
+        return f"🧪 Наложить {stack} {status}{tgt_str}"
+
+    # Если скрипт неизвестен, возвращаем как есть, но красивее
+    return f"🔧 {script_id} {params}"
+
+
 def render_unit_stats(unit: Unit):
     icon = '🟦' if 'Roland' in unit.name else '🟥'
     st.markdown(f"### {icon} {unit.name}")
@@ -72,9 +92,16 @@ def card_selector_ui(unit: Unit, key_prefix: str):
             st.error("Library empty!")
             return None
 
-        options_map = {f"{c.name} ({c.id})": c for c in all_cards_objs}
-        selected_key = st.selectbox("Preset", list(options_map.keys()), key=f"{key_prefix}_lib")
-        selected_card = options_map[selected_key]
+        # --- ИЗМЕНЕНИЕ 1: ЧИСТЫЙ DROPDOWN ---
+        # Передаем список объектов Card напрямую.
+        # format_func=lambda x: x.name заставляет Streamlit показывать только имя.
+        selected_card = st.selectbox(
+            "Preset",
+            all_cards_objs,
+            format_func=lambda x: x.name,
+            key=f"{key_prefix}_lib"
+        )
+
         if selected_card.description:
             st.caption(f"📝 {selected_card.description}")
 
@@ -108,12 +135,19 @@ def render_card_visual(card: Card, is_staggered: bool = False):
             return
 
         type_icon = "🏹" if card.card_type == "ranged" else "⚔️"
-        st.markdown(f"**{card.name}** ({type_icon}")
+        st.markdown(f"**{card.name}** {type_icon}")  # Убрал скобку, выглядело странно
 
+        # --- ИЗМЕНЕНИЕ 2: КРАСИВЫЕ ЭФФЕКТЫ ---
         if card.scripts:
-            with st.expander("Effects", expanded=False):
-                for trig, scripts in card.scripts.items():
-                    for s in scripts: st.markdown(f"- `{s['script_id']}`")
+            # Отображаем эффекты карты (On Use и т.д.)
+            for trig, scripts in card.scripts.items():
+                trigger_name = trig.replace("_", " ").title()  # on_use -> On Use
+                st.markdown(f"**{trigger_name}:**")
+                for s in scripts:
+                    friendly_text = _format_script_text(s['script_id'], s.get('params', {}))
+                    st.caption(f"- {friendly_text}")
+
+        st.divider()
 
         cols = st.columns(len(card.dice_list)) if card.dice_list else [st]
         for i, dice in enumerate(card.dice_list):
@@ -121,6 +155,10 @@ def render_card_visual(card: Card, is_staggered: bool = False):
                 color = TYPE_COLORS.get(dice.dtype, "black")
                 icon = TYPE_ICONS.get(dice.dtype, "?")
                 st.markdown(f":{color}[{icon} **{dice.min_val}-{dice.max_val}**]")
+
+                # Эффекты на кубиках тоже переводим
                 if dice.scripts:
                     for trig, effs in dice.scripts.items():
-                        for e in effs: st.caption(f"*{e.get('script_id')}*")
+                        for e in effs:
+                            friendly_text = _format_script_text(e['script_id'], e.get('params', {}))
+                            st.caption(f"*{friendly_text}*")

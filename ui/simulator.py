@@ -19,6 +19,7 @@ def capture_output():
     finally:
         sys.stdout = old_out
 
+
 def run_combat():
     p1 = st.session_state['attacker']
     p2 = st.session_state['defender']
@@ -34,8 +35,31 @@ def run_combat():
 
     sys_clash = ClashSystem()
 
+    # === ВРЕМЕННЫЙ РАСЧЕТ СКОРОСТИ В UI (ПОКА НЕТ БОЕВОЙ СИСТЕМЫ) ===
+    import random
+
+    # Это та же логика, что была в clash.py, но теперь она живет "снаружи" движка
+    sp1 = random.randint(1, 6) + p1.get_status("haste") - p1.get_status("slow")
+    sp2 = random.randint(1, 6) + p2.get_status("haste") - p2.get_status("slow")
+    diff = max(1, sp1) - max(1, sp2)  # (sp1 - sp2)
+
+    adv_p1 = "normal"
+    adv_p2 = "normal"
+
+    # Твоя логика порогов
+    if diff >= 8:
+        adv_p2 = "impossible"
+    elif diff >= 4:
+        adv_p2 = "disadvantage"
+    elif diff <= -8:
+        adv_p1 = "impossible"
+    elif diff <= -4:
+        adv_p1 = "disadvantage"
+    # ================================================================
+
     with capture_output() as captured:
-        logs = sys_clash.resolve_card_clash(p1, p2)
+        # Передаем рассчитанные преимущества
+        logs = sys_clash.resolve_card_clash(p1, p2, adv_p1, adv_p2)
 
     st.session_state['battle_logs'] = logs
     st.session_state['script_logs'] = captured.getvalue()
@@ -119,3 +143,5 @@ def render_simulator_page():
                 elif "One-Sided" in det: c3.error(det)
                 elif "Stagger" in det: c3.warning(det)
                 else: c3.info(det)
+
+

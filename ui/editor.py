@@ -5,75 +5,99 @@ from core.library import Library
 
 
 def render_editor_page():
-    st.header("🛠️ Card Creator (Status Update)")
-    st.info("Создайте карту и добавьте эффекты (Кровотечение, Паралич и т.д.)")
+    st.markdown("### 🛠️ Card Creator")
 
-    st.subheader("Настройка Кубиков")
-    num_dice = st.slider("Количество кубиков", 1, 4, 3)
+    # --- 1. Основные параметры (Компактно) ---
+    with st.container(border=True):
+        c1, c2, c3 = st.columns([3, 1, 1])
+        name = c1.text_input("Name", "Слежка", label_visibility="collapsed", placeholder="Card Name")
+        tier = c2.selectbox("Tier", [1, 2, 3], label_visibility="collapsed")
+        ctype = c3.selectbox("Type", ["melee", "ranged"], label_visibility="collapsed")
 
-    with st.form("new_card_form"):
-        c1, c2 = st.columns([3, 1])
-        name = c1.text_input("Название карты", "Frenzy")
-        tier = c2.selectbox("Уровень (Tier)", [1, 2, 3], index=0)
+        desc = st.text_area("Description", "При Использовании: восстанавливает 1 HP", height=68,
+                            placeholder="Description text...")
 
-        c3, c4 = st.columns(2)
-        ctype = c3.selectbox("Тип", ["melee", "ranged"])
-        desc = c4.text_area("Описание", "On Hit: Inflict 1 Bleed")
+    # --- 2. Эффекты Карты (Card Scripts) ---
+    # Здесь мы добавляем эффект "On Use -> Heal"
+    card_scripts = {}
+    with st.expander("✨ Card Effects (On Use / Passive)", expanded=False):
+        ce_col1, ce_col2, ce_col3 = st.columns([1, 1, 1])
+        ce_trigger = ce_col1.selectbox("Trigger", ["on_use", "on_combat_end"], key="ce_trig")
+        ce_type = ce_col2.selectbox("Effect", ["None", "Heal HP", "Apply Status"], key="ce_type")
 
-        st.divider()
+        ce_val = 0
+        ce_stat = ""
 
-        dice_data = []
-        available_statuses = ["None", "bleed", "paralysis", "burn", "strength", "weakness", "haste", "bind"]
+        if ce_type == "Heal HP":
+            ce_val = ce_col3.number_input("Amount", 1, 20, 1, key="ce_val_hp")
+            if ce_type != "None":
+                card_scripts[ce_trigger] = [{
+                    "script_id": "restore_hp",
+                    "params": {"amount": int(ce_val), "target": "self"}
+                }]
+        elif ce_type == "Apply Status":
+            # Упрощенно для примера
+            ce_stat = ce_col3.text_input("Status ID", "strength", key="ce_stat_id")
 
-        for i in range(num_dice):
+    # --- 3. Кубики (Grid Layout) ---
+    st.markdown("**Dice Configuration**")
+    num_dice = st.slider("Dice Count", 1, 4, 1, label_visibility="collapsed")
+
+    dice_data = []
+
+    # Используем колонки для отображения кубиков в ряд
+    cols = st.columns(num_dice)
+
+    for i in range(num_dice):
+        with cols[i]:
             with st.container(border=True):
-                st.markdown(f"**🎲 Кубик {i + 1}**")
+                # Заголовок кубика
+                dc1, dc2 = st.columns([2, 1])
+                dtype_str = dc1.selectbox("Type", ["Slash", "Pierce", "Blunt", "Block", "Evade"], key=f"d_t_{i}",
+                                          label_visibility="collapsed")
 
-                dc1, dc2, dc3, dc4 = st.columns([1.5, 1, 1, 2])
-                d_type_str = dc1.selectbox(f"Тип", ["Slash", "Pierce", "Blunt", "Block", "Evade"], key=f"d_type_{i}")
-                d_min = dc2.number_input(f"Min", 1, 50, 2, key=f"d_min_{i}")
-                d_max = dc3.number_input(f"Max", 1, 50, 4, key=f"d_max_{i}")
+                # Мин-Макс в одну строку
+                mm_c1, mm_c2 = st.columns(2)
+                d_min = mm_c1.number_input("Min", 1, 50, 1, key=f"d_min_{i}")
+                d_max = mm_c2.number_input("Max", 1, 50, 4, key=f"d_max_{i}")
 
-                st.markdown("👇 **Эффект (Script)**")
-                ec1, ec2, ec3 = st.columns([2, 1, 1.5])
+                # Скрипты кубика (спрятаны в toggle/expander, чтобы не занимать место)
+                with st.popover("Effects"):
+                    eff_name = st.selectbox("Status", ["None", "bleed", "paralysis", "burn"], key=f"de_n_{i}")
+                    eff_amt = st.number_input("Amt", 1, 10, 1, key=f"de_a_{i}")
+                    eff_trig = st.selectbox("When", ["on_hit", "on_clash_win"], key=f"de_t_{i}")
 
-                effect_name = ec1.selectbox("Наложить статус", available_statuses, key=f"eff_name_{i}")
-                effect_amt = ec2.number_input("Сила", 1, 10, 1, key=f"eff_amt_{i}")
-                trigger = ec3.selectbox("Триггер", ["on_hit", "on_clash_win", "on_use"], key=f"trig_{i}")
-
-                scripts_dict = {}
-                if effect_name != "None":
-                    script_payload = {
+                # Сборка скриптов кубика
+                d_scripts = {}
+                if eff_name != "None":
+                    d_scripts[eff_trig] = [{
                         "script_id": "apply_status",
-                        "params": {"status": effect_name, "stack": int(effect_amt), "target": "target"}
-                    }
-                    scripts_dict[trigger] = [script_payload]
+                        "params": {"status": eff_name, "stack": int(eff_amt), "target": "target"}
+                    }]
 
+                # Конвертация типа
                 type_enum = DiceType.SLASH
-                if d_type_str == "Pierce":
+                if dtype_str == "Pierce":
                     type_enum = DiceType.PIERCE
-                elif d_type_str == "Blunt":
+                elif dtype_str == "Blunt":
                     type_enum = DiceType.BLUNT
-                elif d_type_str == "Block":
+                elif dtype_str == "Block":
                     type_enum = DiceType.BLOCK
-                elif d_type_str == "Evade":
+                elif dtype_str == "Evade":
                     type_enum = DiceType.EVADE
 
                 dice_obj = Dice(d_min, d_max, type_enum)
-                dice_obj.scripts = scripts_dict
+                dice_obj.scripts = d_scripts
                 dice_data.append(dice_obj)
 
-        st.divider()
+    # --- 4. Сохранение ---
+    st.divider()
+    save_col, _ = st.columns([1, 4])
+    if save_col.button("💾 Save Card", type="primary"):
         auto_id = name.lower().replace(" ", "_") + "_" + str(uuid.uuid4())[:4]
-        card_id = st.text_input("Unique ID", auto_id)
-
-        submitted = st.form_submit_button("💾 Сохранить в Библиотеку", type="primary")
-
-        if submitted:
-            new_card = Card(
-                id=card_id, name=name, tier=tier, card_type=ctype,
-                description=desc, dice_list=dice_data
-            )
-            Library.save_card(new_card, filename="custom_cards.json")
-            st.success(f"Карта '{name}' ({len(dice_data)} кубиков) сохранена!")
-            st.balloons()
+        new_card = Card(
+            id=auto_id, name=name, tier=tier, card_type=ctype,
+            description=desc, dice_list=dice_data, scripts=card_scripts
+        )
+        Library.save_card(new_card, filename="custom_cards.json")
+        st.toast(f"Card '{name}' Saved!", icon="✅")
