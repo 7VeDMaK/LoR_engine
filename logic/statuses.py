@@ -1,69 +1,20 @@
-from typing import List, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from core.models import Unit
-
+from typing import List
+from logic.status_definitions import STATUS_REGISTRY
 
 class StatusManager:
     @staticmethod
     def process_turn_end(unit: 'Unit') -> List[str]:
-        """
-        Обработка статусов в конце раунда (нанесение DOT-урона, снятие баффов).
-        """
         logs = []
+        # Копия ключей, так как статусы могут удаляться внутри цикла
+        current_statuses = list(unit.statuses.items())
 
-        # --- 1. Горение (Burn) ---
-        # Наносит урон в конце хода и уменьшается на 1/3 (или половину, зависит от версии правил)
-        burn = unit.get_status("burn")
-        if burn > 0:
-            dmg = burn
-            unit.current_hp -= dmg
-            # В LoR горение обычно теряет часть стаков, а не все
-            unit.remove_status("burn", burn // 3)
-            logs.append(f"🔥 Burn: {unit.name} takes {dmg} dmg")
-
-        # --- 2. Сотрясение (Tremor) ---
-        # Обычно снижает порог оглушения, само по себе не наносит урон HP.
-        # Спадает в конце хода, если не активировано.
-        if unit.get_status("tremor") > 0:
-            unit.remove_status("tremor")  # Полный сброс или decay
-
-        # --- 3. Самообладание (Poise) ---
-        # Теряет 20% или фиксированное значение
-        poise = unit.get_status("poise")
-        if poise > 0:
-            loss = max(1, int(poise * 0.2))
-            unit.remove_status("poise", loss)
-
-        # --- 4. Заряд (Charge) ---
-        # Теряет 1 заряд каждый ход
-        charge = unit.get_status("charge")
-        if charge > 0:
-            unit.remove_status("charge", 1)
-
-        # --- 5. Кровотечение (Bleed) ---
-        # ВАЖНО: Кровотечение в LoR действует одну сцену.
-        # Если юнит не атаковал (не истратил стаки), они сгорают в конце хода.
-        if unit.get_status("bleed") > 0:
-            unit.remove_status("bleed")
-            # Если вы хотите, чтобы кровотечение оставалось (как в Darkest Dungeon),
-            # закомментируйте строку выше. Но по канону LoR оно исчезает.
-
-        # --- 6. Очистка временных баффов/дебаффов ---
-        # Эти статусы действуют только 1 раунд (Scene)
-        temp_stats = [
-            "strength", "weakness",  # Сила / Слабость
-            "endurance", "disarm",  # Стойкость / Разоружение
-            "haste", "slow",  # Скорость
-            "protection", "fragile",  # Защита / Хрупкость
-            "dmg_up", "dmg_down",  # Бонусы урона
-            "paralysis", "bind",  # Паралич, Связывание
-            "barrier",  # Барьеры
-            "stun", "stagger"  # Если стаггер восстанавливается автоматом
-        ]
-
-        for st in temp_stats:
-            if unit.get_status(st) > 0:
-                unit.remove_status(st)  # Удаляем полностью
+        for status_id, stack in current_statuses:
+            if status_id in STATUS_REGISTRY:
+                handler = STATUS_REGISTRY[status_id]
+                msgs = handler.on_turn_end(unit, stack)
+                logs.extend(msgs)
+            else:
+                # Fallback для статусов, которых нет в реестре (например временные заглушки)
+                pass
 
         return logs
