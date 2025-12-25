@@ -1,31 +1,32 @@
-# logic/card_scripts.py
+from typing import TYPE_CHECKING
 
-def convert_evade_to_haste(context, params):
-    """Пример: Инерция. Конвертирует уклонения в спешку."""
-    # Здесь будет логика доступа к user.combat_dashboard
-    print(f"DEBUG: Сработал скрипт 'convert_evade_to_haste'")
+if TYPE_CHECKING:
+    from logic.modifiers import RollContext
+    from core.models import Unit
 
-def apply_status(context, params):
-    """Универсальный скрипт наложения статуса"""
-    status = params.get("status")
+
+def apply_status(context: 'RollContext', params: dict):
+    """
+    Накладывает статус на цель или на себя.
+    params: {
+        "status": "bleed",   # код статуса
+        "stack": 1,          # количество
+        "target": "target"   # "target" (враг) или "self" (себя)
+    }
+    """
+    status_name = params.get("status")
     stack = params.get("stack", 1)
-    target = params.get("target", "enemy") # self или enemy
-    print(f"DEBUG: Накладываем {status} x{stack} на {target}")
+    target_type = params.get("target", "target")  # по умолчанию враг
 
-def break_die_slot(context, params):
-    """Пример: Пурж-Токсин. Ломает слот кубика."""
-    slot = params.get("slot", 0)
-    print(f"DEBUG: Ломаем слот {slot} у врага")
+    # Определяем, на кого вешать
+    unit_to_affect = context.target if target_type == "target" else context.source
 
-def heal_percent_medicine(context, params):
-    """Пример: Морфиновый дротик"""
-    print(f"DEBUG: Лечим цель на % от Медицины")
+    if unit_to_affect and status_name:
+        unit_to_affect.add_status(status_name, stack)
+        context.log.append(f"🧪 {status_name.capitalize()} +{stack} to {unit_to_affect.name}")
 
-# === РЕЕСТР СКРИПТОВ ===
-# Строка из JSON -> Функция Python
+
+# Реестр функций, доступных для вызова из JSON
 SCRIPTS_REGISTRY = {
-    "convert_evade_to_haste": convert_evade_to_haste,
     "apply_status": apply_status,
-    "break_die_slot": break_die_slot,
-    "heal_percent_medicine": heal_percent_medicine
 }

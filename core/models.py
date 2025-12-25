@@ -87,26 +87,77 @@ class Card:
             dice_list=[Dice.from_dict(d) for d in data.get("dice", [])]
         )
 
+@dataclass
+class Unit:
+    name: str
+    max_hp: int = 100
+    current_hp: int = 100
 
-# ... (Остальные классы Unit, Resistances без изменений)
+    # === НОВОЕ: Рассудок (Sanity / SP) ===
+    max_sp: int = 45
+    current_sp: int = 45  # Обычно стартует с 0 или 45, сделаем макс для примера
+
+    max_stagger: int = 50
+    current_stagger: int = 50
+
+    hp_resists: 'Resistances' = field(default_factory=lambda: Resistances())
+    stagger_resists: 'Resistances' = field(default_factory=lambda: Resistances())
+
+    current_card: Optional['Card'] = None
+
+    # === НОВОЕ: Статусы и Ресурсы ===
+    # statuses: {"strength": 2, "bleed": 5, "paralysis": 1}
+    statuses: Dict[str, int] = field(default_factory=dict)
+
+    # resources: {"ammo": 5, "charge": 0}
+    resources: Dict[str, int] = field(default_factory=dict)
+
+    def is_staggered(self):
+        return self.current_stagger <= 0
+
+    def is_dead(self):
+        return self.current_hp <= 0
+
+    # Хелперы для статусов
+    def add_status(self, name: str, amount: int):
+        if name not in self.statuses:
+            self.statuses[name] = 0
+        self.statuses[name] += amount
+        # Лимит для некоторых статусов (например, Charge макс 10 без брони)
+        if name == "charge" and self.statuses[name] > 10:
+            self.statuses[name] = 10  # Упрощенно
+        if name == "poise" and self.statuses[name] > 100:
+            self.statuses[name] = 100
+
+    def get_status(self, name: str) -> int:
+        return self.statuses.get(name, 0)
+
+    def remove_status(self, name: str, amount: int = None):
+        """Если amount=None, удаляет полностью"""
+        if name in self.statuses:
+            if amount is None:
+                del self.statuses[name]
+            else:
+                self.statuses[name] = max(0, self.statuses[name] - amount)
+                if self.statuses[name] == 0:
+                    del self.statuses[name]
+
+    # Хелперы для лечения/урона (чтобы учесть Глубокую Рану)
+    def heal_hp(self, amount: int):
+        deep_wound = self.get_status("deep_wound")
+        if deep_wound > 0:
+            amount = int(amount * 0.75)
+            self.remove_status("deep_wound", 1)
+
+        self.current_hp = min(self.max_hp, self.current_hp + amount)
+        return amount
+
+    def take_sanity_damage(self, amount: int):
+        self.current_sp = max(-45, self.current_sp - amount)
+
 
 @dataclass
 class Resistances:
     slash: float = 1.0
     pierce: float = 1.0
     blunt: float = 1.0
-
-
-@dataclass
-class Unit:
-    name: str
-    max_hp: int = 100
-    current_hp: int = 100
-    max_stagger: int = 50
-    current_stagger: int = 50
-    hp_resists: Resistances = field(default_factory=Resistances)
-    stagger_resists: Resistances = field(default_factory=Resistances)
-    current_card: Optional[Card] = None
-
-    def is_staggered(self):
-        return self.current_stagger <= 0

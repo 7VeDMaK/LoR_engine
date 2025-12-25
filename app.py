@@ -7,6 +7,7 @@ import uuid
 from core.models import Unit, Card, Dice, DiceType, Resistances
 from core.library import Library
 from logic.clash import ClashSystem
+from logic.statuses import StatusManager
 
 st.set_page_config(page_title="LoR Engine", layout="wide")
 
@@ -62,8 +63,8 @@ def run_combat():
     real_card_1 = p1.current_card
     real_card_2 = p2.current_card
 
-    if p1_stag: p1.current_card = Card("Stunned", 0, [])
-    if p2_stag: p2.current_card = Card("Stunned", 0, [])
+    if p1_stag: p1.current_card = Card(name="Stunned", dice_list=[])
+    if p2_stag: p2.current_card = Card(name="Stunned", dice_list=[])
 
     sys_clash = ClashSystem()
 
@@ -86,6 +87,15 @@ def run_combat():
     if p1_stag: p1.current_card = real_card_1
     if p2_stag: p2.current_card = real_card_2
 
+    end_turn_logs_p1 = StatusManager.process_turn_end(p1)
+    end_turn_logs_p2 = StatusManager.process_turn_end(p2)
+
+    # Добавить эти логи в общий лог
+    if end_turn_logs_p1: st.session_state['battle_logs'].append(
+        {"round": "End", "rolls": "P1 Statuses", "details": ", ".join(end_turn_logs_p1)})
+    if end_turn_logs_p2: st.session_state['battle_logs'].append(
+        {"round": "End", "rolls": "P2 Statuses", "details": ", ".join(end_turn_logs_p2)})
+
 
 def reset_game():
     del st.session_state['attacker']
@@ -98,11 +108,61 @@ def reset_game():
 # --- UI COMPONENTS (HELPER FUNCTIONS) ---
 
 def render_unit_stats(unit):
-    st.markdown(f"### {'🟦' if 'Roland' in unit.name else '🟥'} {unit.name}")
-    hp_pct = max(0, unit.current_hp / unit.max_hp)
+    # Определяем цвет иконки (для красоты заголовка)
+    icon = '🟦' if 'Roland' in unit.name else '🟥'
+    st.markdown(f"### {icon} {unit.name}")
+
+    # --- 1. HP Bar ---
+    # Защита от деления на 0
+    max_hp = unit.max_hp if unit.max_hp > 0 else 1
+    hp_pct = max(0.0, min(1.0, unit.current_hp / max_hp))
     st.progress(hp_pct, text=f"HP: {unit.current_hp}/{unit.max_hp}")
-    stg_pct = max(0, unit.current_stagger / unit.max_stagger)
+
+    # --- 2. Stagger Bar ---
+    max_stg = unit.max_stagger if unit.max_stagger > 0 else 1
+    stg_pct = max(0.0, min(1.0, unit.current_stagger / max_stg))
     st.progress(stg_pct, text=f"Stagger: {unit.current_stagger}/{unit.max_stagger}")
+
+    # --- 3. Sanity (SP) Bar ---
+    # Диапазон SP: от -Max до +Max. Всего делений = Max * 2.
+    # Пример: от -45 до +45 (размер 90).
+    # 0 SP должно быть посередине (0.5).
+
+    sp_limit = unit.max_sp  # Например, 45
+    total_range = sp_limit * 2  # 90
+    if total_range == 0: total_range = 1
+
+    # Сдвигаем текущее значение, чтобы -45 стало 0
+    # Пример: current = -45 -> shifted = 0. current = 0 -> shifted = 45.
+    current_shifted = unit.current_sp + sp_limit
+
+    sp_pct = current_shifted / total_range
+    # Обрезаем границы (clamp), чтобы не вылетело за 0.0-1.0
+    sp_pct = max(0.0, min(1.0, sp_pct))
+
+    # Добавляем эмодзи настроения в текст
+    mood = "😐"
+    if unit.current_sp >= 20:
+        mood = "🙂"
+    elif unit.current_sp >= 40:
+        mood = "😄"
+    elif unit.current_sp <= -20:
+        mood = "😨"
+    elif unit.current_sp <= -40:
+        mood = "😱"
+
+    st.progress(sp_pct, text=f"Sanity: {unit.current_sp}/{unit.max_sp} {mood}")
+
+    # --- 4. Statuses ---
+    if unit.statuses:
+        st.markdown("---")
+        # Отображаем статусы компактной сеткой
+        cols = st.columns(4)
+        idx = 0
+        for name, val in unit.statuses.items():
+            with cols[idx % 4]:
+                st.metric(label=name.capitalize(), value=val)
+            idx += 1
 
 
 def render_resist_inputs(unit, key_prefix):
@@ -153,7 +213,8 @@ def card_selector_ui(unit, key_prefix):
                 dmin = c2.number_input("Min", 1, 50, 4, key=f"{key_prefix}_d_{i}_min", label_visibility="collapsed")
                 dmax = c3.number_input("Max", 1, 50, 8, key=f"{key_prefix}_d_{i}_max", label_visibility="collapsed")
                 custom_dice.append(Dice(dmin, dmax, DiceType[dtype_str]))
-            selected_card = Card(c_name, 0, custom_dice)
+                # Передаем список кубиков в правильный аргумент
+                selected_card = Card(name=c_name, dice_list=custom_dice, description="Custom Card")
 
     if not unit.is_staggered():
         unit.current_card = selected_card
@@ -258,63 +319,89 @@ def render_simulator():
 # PAGE 2: CARD EDITOR
 # ==========================================
 def render_editor():
-    st.header("🛠️ Card Creator")
-    st.info("Create a new card and add it to the Library permanently.")
+    st.header("🛠️ Card Creator (Status Update)")
+    st.info("Создайте карту и добавьте эффекты (Кровотечение, Паралич и т.д.)")
 
+    # === [ИСПРАВЛЕНИЕ] Слайдер вынесен из формы, чтобы обновлять UI мгновенно ===
+    st.subheader("Настройка Кубиков")
+    num_dice = st.slider("Количество кубиков", 1, 4, 3)
+
+    # Теперь открываем форму
     with st.form("new_card_form"):
-        # ИЗМЕНЕНИЕ: Убрали колонку Cost. Теперь только Имя и Тир.
         c1, c2 = st.columns([3, 1])
-        name = c1.text_input("Card Name", "New Attack")
-        tier = c2.selectbox("Tier", [1, 2, 3], index=0)
+        name = c1.text_input("Название карты", "Frenzy")
+        tier = c2.selectbox("Уровень (Tier)", [1, 2, 3], index=0)
 
         c3, c4 = st.columns(2)
-        ctype = c3.selectbox("Type", ["melee", "ranged"])
-        desc = c4.text_area("Description", "On Use: ...")
+        ctype = c3.selectbox("Тип", ["melee", "ranged"])
+        desc = c4.text_area("Описание", "On Hit: Inflict 1 Bleed")
 
-        st.subheader("Dice Configuration")
-        num_dice = st.slider("Dice Count", 1, 5, 2)
+        st.divider()
 
         dice_data = []
+        available_statuses = ["None", "bleed", "paralysis", "burn", "strength", "weakness", "haste", "bind"]
+
+        # Цикл теперь использует значение снаружи формы, которое обновляется сразу
         for i in range(num_dice):
-            st.markdown(f"**Die {i + 1}**")
-            dc1, dc2, dc3 = st.columns([1, 1, 1])
-            d_type = dc1.selectbox(f"Type", ["slash", "pierce", "blunt", "block", "evade"], key=f"ed_{i}")
-            d_min = dc2.number_input(f"Min", 1, 50, 3, key=f"emin_{i}")
-            d_max = dc3.number_input(f"Max", 1, 50, 7, key=f"emax_{i}")
+            with st.container(border=True):
+                st.markdown(f"**🎲 Кубик {i + 1}**")
 
-            type_enum = DiceType.SLASH
-            if d_type == "pierce":
-                type_enum = DiceType.PIERCE
-            elif d_type == "blunt":
-                type_enum = DiceType.BLUNT
-            elif d_type == "block":
-                type_enum = DiceType.BLOCK
-            elif d_type == "evade":
-                type_enum = DiceType.EVADE
+                dc1, dc2, dc3, dc4 = st.columns([1.5, 1, 1, 2])
+                d_type_str = dc1.selectbox(f"Тип", ["Slash", "Pierce", "Blunt", "Block", "Evade"], key=f"d_type_{i}")
+                d_min = dc2.number_input(f"Min", 1, 50, 2, key=f"d_min_{i}")
+                d_max = dc3.number_input(f"Max", 1, 50, 4, key=f"d_max_{i}")
 
-            dice_data.append(Dice(d_min, d_max, type_enum))
+                st.markdown("👇 **Эффект (Script)**")
+                ec1, ec2, ec3 = st.columns([2, 1, 1.5])
+
+                effect_name = ec1.selectbox("Наложить статус", available_statuses, key=f"eff_name_{i}")
+                effect_amt = ec2.number_input("Сила", 1, 10, 1, key=f"eff_amt_{i}")
+                trigger = ec3.selectbox("Триггер", ["on_hit", "on_clash_win", "on_use"], key=f"trig_{i}")
+
+                # Собираем данные (логика та же)
+                scripts_dict = {}
+                if effect_name != "None":
+                    script_payload = {
+                        "script_id": "apply_status",
+                        "params": {
+                            "status": effect_name,
+                            "stack": int(effect_amt),
+                            "target": "target"
+                        }
+                    }
+                    scripts_dict[trigger] = [script_payload]
+
+                type_enum = DiceType.SLASH
+                if d_type_str == "Pierce":
+                    type_enum = DiceType.PIERCE
+                elif d_type_str == "Blunt":
+                    type_enum = DiceType.BLUNT
+                elif d_type_str == "Block":
+                    type_enum = DiceType.BLOCK
+                elif d_type_str == "Evade":
+                    type_enum = DiceType.EVADE
+
+                dice_obj = Dice(d_min, d_max, type_enum)
+                dice_obj.scripts = scripts_dict
+                dice_data.append(dice_obj)
 
         st.divider()
         auto_id = name.lower().replace(" ", "_") + "_" + str(uuid.uuid4())[:4]
         card_id = st.text_input("Unique ID", auto_id)
 
-        submitted = st.form_submit_button("💾 Save to Library", type="primary")
+        submitted = st.form_submit_button("💾 Сохранить в Библиотеку", type="primary")
 
         if submitted:
-            # ИЗМЕНЕНИЕ: Создаем карту без cost
             new_card = Card(
                 id=card_id,
                 name=name,
-                # Cost удален
                 tier=tier,
                 card_type=ctype,
                 description=desc,
                 dice_list=dice_data
             )
-
             Library.save_card(new_card, filename="custom_cards.json")
-
-            st.success(f"Card '{name}' successfully saved to 'custom_cards.json'!")
+            st.success(f"Карта '{name}' ({len(dice_data)} кубиков) сохранена!")
             st.balloons()
 
 
