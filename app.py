@@ -2,89 +2,188 @@ import streamlit as st
 from core.models import Unit, Card, Dice, DiceType, Resistances
 from logic.clash import ClashSystem
 
-st.set_page_config(page_title="LoR Advanced Calc", layout="wide")
-st.title("⚔️ Combat System: Stagger & Resistances")
+st.set_page_config(page_title="LoR Combat Sim", layout="wide")
+
+# --- CSS STYLES ---
+st.markdown("""
+<style>
+    div[data-testid="stMetricValue"] { font-size: 18px; }
+    .dice-box { border: 1px solid #555; border-radius: 5px; padding: 10px; text-align: center; background: #262730; }
+    .st-emotion-cache-16idsys p { font-size: 1.1rem; }
+</style>
+""", unsafe_allow_html=True)
+
+# --- CONSTANTS ---
+TYPE_ICONS = {DiceType.SLASH: "🗡️", DiceType.PIERCE: "🏹", DiceType.BLUNT: "🔨", DiceType.BLOCK: "🛡️",
+              DiceType.EVADE: "💨"}
+TYPE_COLORS = {DiceType.SLASH: "red", DiceType.PIERCE: "green", DiceType.BLUNT: "orange", DiceType.BLOCK: "blue",
+               DiceType.EVADE: "gray"}
 
 
-# --- Helpers ---
-def render_resist_inputs(prefix):
-    c1, c2, c3 = st.columns(3)
-    s = c1.number_input("Slash Res", 0.1, 2.0, 1.0, 0.5, key=f"{prefix}_s")
-    p = c2.number_input("Pierce Res", 0.1, 2.0, 1.0, 0.5, key=f"{prefix}_p")
-    b = c3.number_input("Blunt Res", 0.1, 2.0, 1.0, 0.5, key=f"{prefix}_b")
-    return Resistances(s, p, b)
+# --- PRESETS (Пока не трогаем, как ты просил) ---
+def get_card_presets():
+    return {
+        "Rampage (Буйство)": Card("Rampage", 3, [Dice(2, 4, DiceType.BLUNT), Dice(3, 5, DiceType.PIERCE),
+                                                 Dice(3, 5, DiceType.SLASH)]),
+        "Iron Defense": Card("Iron Def", 2, [Dice(5, 9, DiceType.BLOCK), Dice(5, 8, DiceType.BLOCK)]),
+        "Evade Master": Card("Dodge", 2, [Dice(6, 12, DiceType.EVADE), Dice(4, 8, DiceType.SLASH)]),
+        "Strong Hit": Card("Heavy", 3, [Dice(5, 10, DiceType.BLUNT)]),
+        "Basic Attack": Card("Basic", 1, [Dice(3, 7, DiceType.SLASH), Dice(3, 6, DiceType.PIERCE)])
+    }
 
 
-def render_card_builder(key_prefix, default_name):
+# --- HELPERS ---
+def render_resist_inputs(unit, key_prefix):
+    """Рисует инпуты резистов и обновляет юнит"""
+    with st.expander(f"🛡️ Resistances & Stats ({unit.name})"):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.caption("HP Resistances")
+            h_s = st.number_input("Slash", 0.1, 2.0, unit.hp_resists.slash, 0.1, key=f"{key_prefix}_h_s")
+            h_p = st.number_input("Pierce", 0.1, 2.0, unit.hp_resists.pierce, 0.1, key=f"{key_prefix}_h_p")
+            h_b = st.number_input("Blunt", 0.1, 2.0, unit.hp_resists.blunt, 0.1, key=f"{key_prefix}_h_b")
+            unit.hp_resists = Resistances(h_s, h_p, h_b)
+        with c2:
+            st.caption("Stagger Resistances")
+            s_s = st.number_input("Slash", 0.1, 2.0, unit.stagger_resists.slash, 0.1, key=f"{key_prefix}_s_s")
+            s_p = st.number_input("Pierce", 0.1, 2.0, unit.stagger_resists.pierce, 0.1, key=f"{key_prefix}_s_p")
+            s_b = st.number_input("Blunt", 0.1, 2.0, unit.stagger_resists.blunt, 0.1, key=f"{key_prefix}_s_b")
+            unit.stagger_resists = Resistances(s_s, s_p, s_b)
+
+
+def render_card_visual(unit_name, card, is_staggered=False):
     with st.container(border=True):
-        st.subheader(default_name)
-        count = st.slider(f"Dice Count", 1, 5, 3, key=f"{key_prefix}_cnt")
-        configs = []
-        for i in range(count):
-            c1, c2, c3 = st.columns([1.5, 1, 1])
-            d_type = c1.selectbox("Type", [t.value for t in DiceType], key=f"{key_prefix}_t_{i}")
-            d_min = c2.number_input("Min", 1, 20, 3, key=f"{key_prefix}_min_{i}", label_visibility="collapsed")
-            d_max = c3.number_input("Max", 1, 20, 7, key=f"{key_prefix}_max_{i}", label_visibility="collapsed")
-            configs.append(Dice(d_min, d_max, DiceType(d_type)))
-        return Card(default_name, 0, configs)
+        if is_staggered:
+            st.error(f"😵 {unit_name} is Staggered!")
+            st.caption("Cannot act this turn. All dice removed.")
+            return
+
+        st.subheader(f"🃏 {card.name}")
+        cols = st.columns(len(card.dice_list))
+        for i, dice in enumerate(card.dice_list):
+            color = TYPE_COLORS[dice.dtype]
+            with cols[i]:
+                st.markdown(f":{color}[**{TYPE_ICONS[dice.dtype]} {dice.dtype.value}**]")
+                st.markdown(f"**{dice.min_val} ~ {dice.max_val}**")
 
 
-# --- Layout ---
-col_atk, col_mid, col_def = st.columns([1, 0.2, 1])
+# --- INIT STATE ---
+if 'attacker' not in st.session_state:
+    st.session_state['attacker'] = Unit("Roland", max_hp=100, current_hp=100, max_stagger=50, current_stagger=50)
+if 'defender' not in st.session_state:
+    st.session_state['defender'] = Unit("Argalia", max_hp=120, current_hp=120, max_stagger=60, current_stagger=60)
 
-with col_atk:
-    st.info("🟦 Attacker (Roland)")
-    card_a = render_card_builder("atk", "Furioso")
-    # Для простоты атакующий имеет стандартные резисты
+p1 = st.session_state['attacker']
+p2 = st.session_state['defender']
 
-with col_def:
-    st.error("🟥 Defender (Argalia)")
-    card_b = render_card_builder("def", "Blue Reverberation")
+# --- SIDEBAR CONTROL ---
+with st.sidebar:
+    st.title("⚙️ Control Panel")
+    if st.button("🔄 Full Reset"):
+        del st.session_state['attacker']
+        del st.session_state['defender']
+        st.rerun()
 
-    st.caption("HP Resistances")
-    res_hp = render_resist_inputs("hp")
-    st.caption("Stagger Resistances")
-    res_stagger = render_resist_inputs("stg")
+# --- MAIN UI ---
+st.title("⚔️ Library of Ruina Simulator")
+presets = get_card_presets()
+col_left, col_right = st.columns(2)
 
-    start_hp = st.number_input("Start HP", 50, 200, 100)
-    start_stg = st.number_input("Start Stagger", 20, 100, 50)
+# === LEFT UNIT ===
+with col_left:
+    st.markdown(f"### 🟦 {p1.name}")
+    # Stats
+    st.progress(max(0, p1.current_hp / p1.max_hp), text=f"HP: {p1.current_hp}/{p1.max_hp}")
+    st.progress(max(0, p1.current_stagger / p1.max_stagger), text=f"Stagger: {p1.current_stagger}/{p1.max_stagger}")
 
-with col_mid:
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
-    btn_clash = st.button("FIGHT", type="primary")
+    # Resistances Input
+    render_resist_inputs(p1, "p1")
 
-if btn_clash:
-    # Setup Units
-    # Атакующему карту дали
-    u_atk = Unit("Roland", current_card=card_a)
+    # Card Selection
+    c1_name = st.selectbox("Select Card", list(presets.keys()), key="p1_sel", disabled=p1.is_staggered())
+    p1.current_card = presets[c1_name]
 
-    # ИСПРАВЛЕНИЕ: Добавляем current_card=card_b в аргументы
-    u_def = Unit("Argalia",
-                 max_hp=start_hp, current_hp=start_hp,
-                 max_stagger=start_stg, current_stagger=start_stg,
-                 current_card=card_b)  # <--- ВОТ ЭТОГО НЕ ХВАТАЛО
+    # Visual
+    render_card_visual(p1.name, p1.current_card, is_staggered=p1.is_staggered())
 
-    # Применяем резисты из UI
-    u_def.hp_resists = res_hp
-    u_def.stagger_resists = res_stagger
+# === RIGHT UNIT ===
+with col_right:
+    st.markdown(f"### 🟥 {p2.name}")
+    # Stats
+    st.progress(max(0, p2.current_hp / p2.max_hp), text=f"HP: {p2.current_hp}/{p2.max_hp}")
+    st.progress(max(0, p2.current_stagger / p2.max_stagger), text=f"Stagger: {p2.current_stagger}/{p2.max_stagger}")
 
-    # Process
+    # Resistances Input
+    render_resist_inputs(p2, "p2")
+
+    # Card Selection
+    c2_name = st.selectbox("Select Card", list(presets.keys()), index=1, key="p2_sel", disabled=p2.is_staggered())
+    p2.current_card = presets[c2_name]
+
+    # Visual
+    render_card_visual(p2.name, p2.current_card, is_staggered=p2.is_staggered())
+
+# === ACTION BUTTON ===
+st.divider()
+c_btn = st.columns([1, 2, 1])
+with c_btn[1]:
+    btn_text = "🔥 START CLASH 🔥"
+    if p1.is_staggered() or p2.is_staggered():
+        btn_text = "⚠️ EXECUTE ONE-SIDED ATTACK (Staggered)"
+
+    fight_btn = st.button(btn_text, type="primary", use_container_width=True)
+
+# === BATTLE LOGIC ===
+if fight_btn:
     sys = ClashSystem()
-    # Теперь resolve_card_clash не упадет, так как у u_def есть карта
-    logs = sys.resolve_card_clash(u_atk, u_def)
 
-    # Output
-    st.divider()
+    # 1. Проверяем, кто в стаггере ДО начала боя
+    p1_was_staggered = p1.is_staggered()
+    p2_was_staggered = p2.is_staggered()
 
-    # Status Bar
-    c1, c2 = st.columns(2)
-    c1.metric("Defender HP", f"{u_def.current_hp}/{u_def.max_hp}", delta=u_def.current_hp - start_hp)
-    c2.metric("Defender Stagger", f"{u_def.current_stagger}/{u_def.max_stagger}",
-              delta=u_def.current_stagger - start_stg)
+    # 2. Если юнит в стаггере, очищаем его дайсы (он не может атаковать)
+    # Важно: мы делаем копию карты или просто очищаем список дайсов в объекте Unit временно
+    # В нашей модели Unit ссылается на current_card. Чтобы не сломать пресет, сделаем финт:
+    if p1_was_staggered:
+        p1.current_card = Card("Stunned", 0, [])  # Пустая карта
+    if p2_was_staggered:
+        p2.current_card = Card("Stunned", 0, [])
 
-    if u_def.is_staggered():
-        st.error("⚠️ TARGET IS STAGGERED!")
+    # 3. Расчет боя
+    logs = sys.resolve_card_clash(p1, p2)
 
-    st.subheader("Combat Log")
+    # 4. Вывод логов
+    st.subheader("📝 Combat Log")
     for log in logs:
-        st.markdown(f"**{log['round']}**: {log['rolls']} -> {log['details']}")
+        with st.container(border=True):
+            cols = st.columns([2, 1, 4])
+            with cols[0]:
+                st.markdown(f"**Round {log['round']}**")
+                st.caption(log['rolls'])
+            with cols[2]:
+                det = log['details']
+                if "Win" in det:
+                    st.write(f"⚔️ {det}")
+                elif "One-Sided" in det:
+                    st.error(f"🩸 {det}")
+                elif "Stagger" in det:
+                    st.warning(f"💫 {det}")
+                else:
+                    st.info(det)
+
+    # 5. ВОССТАНОВЛЕНИЕ СТАГГЕРА (Конец хода)
+    # Если юнит БЫЛ в стаггере до этого боя, то после получения урона (One-Sided) он восстанавливается.
+    recovered_msg = []
+
+    if p1_was_staggered:
+        p1.current_stagger = p1.max_stagger
+        recovered_msg.append(f"{p1.name} recovered from Stagger!")
+
+    if p2_was_staggered:
+        p2.current_stagger = p2.max_stagger
+        recovered_msg.append(f"{p2.name} recovered from Stagger!")
+
+    if recovered_msg:
+        st.success(" ".join(recovered_msg))
+        # Принудительно обновляем, чтобы показать восстановленную полоску
+        # st.rerun() # Можно раскомментировать для мгновенного обновления

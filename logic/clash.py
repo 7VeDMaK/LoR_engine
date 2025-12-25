@@ -16,34 +16,39 @@ class ClashSystem:
         return dice.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]
 
     def get_multiplier(self, dtype: DiceType, resists: Resistances) -> float:
-        if dtype == DiceType.SLASH: return resists.slash
-        if dtype == DiceType.PIERCE: return resists.pierce
-        if dtype == DiceType.BLUNT: return resists.blunt
-        return 1.0
+        mapping = {
+            DiceType.SLASH: resists.slash,
+            DiceType.PIERCE: resists.pierce,
+            DiceType.BLUNT: resists.blunt
+        }
+        return mapping.get(dtype, 1.0)
 
     def apply_damage(self, target: Unit, amount: int, dtype: DiceType, is_stagger_dmg: bool = False):
-        """Применяет резисты и вычитает HP/Stagger"""
         if amount <= 0: return 0
 
         if is_stagger_dmg:
             mult = self.get_multiplier(dtype, target.stagger_resists)
             final = int(amount * mult)
-            target.current_stagger -= final
+            target.current_stagger = max(0, target.current_stagger - final)
             return final
         else:
-            # Обычный урон бьет и по HP, и по Stagger (обычно)
-            # В LoR урон по HP идет с HP резистом, а по Stagger с Stagger резистом
             hp_mult = self.get_multiplier(dtype, target.hp_resists)
-            stagger_mult = self.get_multiplier(dtype, target.stagger_resists)
+            stg_mult = self.get_multiplier(dtype, target.stagger_resists)
 
             final_hp = int(amount * hp_mult)
-            final_stagger = int(amount * stagger_mult)
+            final_stg = int(amount * stg_mult)
 
-            target.current_hp -= final_hp
-            target.current_stagger -= final_stagger
+            target.current_hp = max(0, target.current_hp - final_hp)
+            target.current_stagger = max(0, target.current_stagger - final_stg)
             return final_hp
 
+    def restore_stagger(self, unit: Unit, amount: int):
+        """Восстанавливает стаггер (не выше максимума)"""
+        unit.current_stagger = min(unit.max_stagger, unit.current_stagger + amount)
+        return amount
+
     def resolve_card_clash(self, attacker: Unit, defender: Unit):
+        # Копируем дайсы, чтобы не удалять их из оригинальной карты
         queue_a = [d for d in attacker.current_card.dice_list]
         queue_b = [d for d in defender.current_card.dice_list]
 
@@ -51,12 +56,12 @@ class ClashSystem:
         round_num = 1
 
         while queue_a and queue_b:
-            # Если кто-то в стаггере - он не может кидать кубики (теряет их)
-            # (Упрощенно: просто прерываем бой или даем free hit, но пока оставим как есть)
+            if attacker.is_staggered() or defender.is_staggered():
+                log.append({"round": round_num, "rolls": "---", "details": "Opponent Staggered! Clash ends."})
+                break
 
             die_a = queue_a.pop(0)
             die_b = queue_b.pop(0)
-
             val_a = self.roll(die_a)
             val_b = self.roll(die_b)
 
@@ -66,47 +71,46 @@ class ClashSystem:
                 "details": ""
             }
 
-            # === 1. АТАКА vs АТАКА ===
+            # 1. ATK vs ATK
             if self.is_attack(die_a) and self.is_attack(die_b):
                 if val_a > val_b:
                     dmg = self.apply_damage(defender, val_a, die_a.dtype)
-                    entry["details"] = f"A Wins! Deals {dmg} HP Dmg"
+                    entry["details"] = f"A Wins! Deals {dmg} HP"
                 elif val_b > val_a:
                     dmg = self.apply_damage(attacker, val_b, die_b.dtype)
-                    entry["details"] = f"B Wins! Deals {dmg} HP Dmg"
+                    entry["details"] = f"B Wins! Deals {dmg} HP"
                 else:
                     entry["details"] = "Clash Draw"
 
-            # === 2. АТАКА (A) vs ЗАЩИТА (B) ===
+            # 2. ATK vs DEF
             elif self.is_attack(die_a) and not self.is_attack(die_b):
                 entry["details"] = self._resolve_atk_vs_def(attacker, val_a, die_a,
                                                             defender, val_b, die_b, queue_b)
 
-            # === 3. ЗАЩИТА (A) vs АТАКА (B) ===
+            # 3. DEF vs ATK
             elif not self.is_attack(die_a) and self.is_attack(die_b):
                 entry["details"] = self._resolve_atk_vs_def(defender, val_b, die_b,
                                                             attacker, val_a, die_a, queue_a)
 
-            # === 4. ЗАЩИТА vs ЗАЩИТА ===
+            # 4. DEF vs DEF
             else:
                 diff = abs(val_a - val_b)
                 if val_a > val_b:
-                    # Победитель наносит Stagger урон
                     dmg = self.apply_damage(defender, diff, DiceType.BLUNT, is_stagger_dmg=True)
-                    entry["details"] = f"Def vs Def: A Wins. Deals {dmg} Stagger Dmg"
-                    # Логика эвейда: если A был Evade, он возвращается
+                    entry["details"] = f"Def Wins! Deals {dmg} Stagger"
+                    # Если выиграл Evade - он восстанавливает стаггер, но НЕ ресайклится об защиту
                     if die_a.dtype == DiceType.EVADE:
-                        queue_a.insert(0, die_a)
-                        entry["details"] += " (Evade Recycled)"
+                        rec = self.restore_stagger(attacker, val_a)
+                        entry["details"] += f" (Recover {rec} Stg)"
 
                 elif val_b > val_a:
                     dmg = self.apply_damage(attacker, diff, DiceType.BLUNT, is_stagger_dmg=True)
-                    entry["details"] = f"Def vs Def: B Wins. Deals {dmg} Stagger Dmg"
+                    entry["details"] = f"Def Wins! Deals {dmg} Stagger"
                     if die_b.dtype == DiceType.EVADE:
-                        queue_b.insert(0, die_b)
-                        entry["details"] += " (Evade Recycled)"
+                        rec = self.restore_stagger(defender, val_b)
+                        entry["details"] += f" (Recover {rec} Stg)"
                 else:
-                    entry["details"] = "Def Draw. Nothing happens."
+                    entry["details"] = "Draw. Both wasted."
 
             log.append(entry)
             round_num += 1
@@ -118,47 +122,42 @@ class ClashSystem:
         return log
 
     def _resolve_atk_vs_def(self, atk_unit, atk_val, atk_die, def_unit, def_val, def_die, def_queue):
-        """Атака (atk) бьет в Защиту (def). Возвращает строку лога."""
-
         # VS BLOCK
         if def_die.dtype == DiceType.BLOCK:
             if atk_val > def_val:
-                dmg_val = atk_val - def_val
-                real_dmg = self.apply_damage(def_unit, dmg_val, atk_die.dtype)
-                return f"Block Broken! {real_dmg} HP Dmg dealt"
+                dmg = self.apply_damage(def_unit, atk_val - def_val, atk_die.dtype)
+                return f"Block Broken! {dmg} HP Dmg"
             else:
-                stagger_val = def_val - atk_val
-                real_stagger = self.apply_damage(atk_unit, stagger_val, DiceType.BLUNT, is_stagger_dmg=True)
-                return f"Blocked! Attacker takes {real_stagger} Stagger Dmg"
+                stg = self.apply_damage(atk_unit, def_val - atk_val, DiceType.BLUNT, is_stagger_dmg=True)
+                return f"Blocked! Reflected {stg} Stagger Dmg"
 
         # VS EVADE
         elif def_die.dtype == DiceType.EVADE:
             if atk_val > def_val:
-                real_dmg = self.apply_damage(def_unit, atk_val, atk_die.dtype)
-                return f"Evade Failed! {real_dmg} HP Dmg dealt"
+                dmg = self.apply_damage(def_unit, atk_val, atk_die.dtype)
+                return f"Evade Failed! {dmg} HP Dmg"
             else:
-                # Эвейд успешен -> Ресайкл.
-                # Опционально: можно восстановить стаггер (def_unit.current_stagger += val)
+                # Evade Success: Recycle + Restore Stagger
                 def_queue.insert(0, def_die)
-                return "Evade Success! Recycled."
+                rec = self.restore_stagger(def_unit, def_val)
+                return f"Evade! Recycled & Recovered {rec} Stagger"
 
-        return "Unknown Def Type"
+        return "Unknown interaction"
 
     def _resolve_onesided(self, queue, attacker, defender):
         log = []
         while queue:
             die = queue.pop(0)
-            val = self.roll(die)
+            if defender.is_staggered():
+                # По стаггеру бьем с полным уроном (можно добавить множитель x2)
+                pass
 
+            val = self.roll(die)
             if self.is_attack(die):
                 dmg = self.apply_damage(defender, val, die.dtype)
-                txt = f"One-Sided Hit! {dmg} HP Dmg"
+                txt = f"Free Hit! {dmg} HP Dmg"
             else:
-                txt = "Defensive die wasted in one-sided"
+                txt = "Defensive die stored (Logic skipped for now)"
 
-            log.append({
-                "round": "One-Sided",
-                "rolls": f"{die.dtype.value}({val})",
-                "details": txt
-            })
+            log.append({"round": "One-Sided", "rolls": f"{die.dtype.value}({val})", "details": txt})
         return log
