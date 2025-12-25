@@ -1,18 +1,8 @@
-# core/calculations.py
 import math
 
-# --- КОНСТАНТЫ ЭМОДЗИ (Чтобы легко менять) ---
-ICO_STR = ""  # Сила (обычно кулак, но в логе пусто)
-ICO_ATK = "🗡️"  # Мечи (Атака)
-ICO_HP = "🤎"  # Коричневое сердечко (Здоровье)
-ICO_BLK = "🛡️"  # Щит (Блок)
-ICO_AGI = ""  # Ловкость
-ICO_INIT = "👢"  # Сапог (Инициатива)
-ICO_EVD = "🌀"  # Вихрь (Уклонение)
-ICO_SP = "🧠"  # Мозг (Рассудок)
-ICO_SLOT = "🧊"  # Куб (Слот дайса)
-ICO_DMG = "💥"  # Взрыв (Урон)
-ICO_HEAL = "💊"  # Таблетка (Лечение)
+# Эмодзи
+I_ATK, I_HP, I_BLK = "⬆", "🤎", "🛡️"
+I_INIT, I_EVD, I_SP, I_DICE = "👢", "🌀", "🧠", "🧊"
 
 
 def recalculate_unit_stats(unit):
@@ -24,196 +14,168 @@ def recalculate_unit_stats(unit):
     }
 
     # === 1. АТРИБУТЫ ===
-
-    # СИЛА
     strength = unit.attributes.get("strength", 0)
-    mod_str_3 = strength // 3
-    if mod_str_3 != 0:
-        logs.append(f"Повышает значение броска силы на {mod_str_3}")
+    if (strength // 3) != 0: logs.append(f"Повышает значение броска силы на {strength // 3}")
+    if (strength // 5) != 0:
+        mods["power_attack"] += strength // 5
+        logs.append(f"Повышает значение куба {I_ATK} атаки на {strength // 5}")
 
-    mod_str_5 = strength // 5
-    if mod_str_5 != 0:
-        mods["power_attack"] += mod_str_5
-        logs.append(f"Повышает значение куба {ICO_ATK} атаки на атакующих картами на {mod_str_5}")
-
-    # СТОЙКОСТЬ
     endurance = unit.attributes.get("endurance", 0)
-    hp_percent_bonus = min(endurance * 2, 100)
-    if hp_percent_bonus > 0:
-        logs.append(f"Повышает максимальный показатель {ICO_HP} здоровья на {hp_percent_bonus}% от основного")
+    hp_flat = (endurance // 3) * 5
+    hp_pct = min(endurance * 2, 100)
+    if hp_pct > 0: logs.append(f"Повышает макс {I_HP} здоровья на {hp_pct}%")
+    if hp_flat > 0: logs.append(f"Персонаж получает +{hp_flat} {I_HP} здоровья")
+    if (endurance // 5) != 0:
+        mods["power_block"] += endurance // 5
+        logs.append(f"Повышает значение куба {I_BLK} блока на {endurance // 5}")
 
-    hp_flat_bonus = (endurance // 3) * 5
-    if hp_flat_bonus > 0:
-        logs.append(f"Персонаж получает дополнительные {hp_flat_bonus} {ICO_HP} здоровья")
-
-    mod_end_5 = endurance // 5
-    if mod_end_5 != 0:
-        mods["power_block"] += mod_end_5
-        logs.append(f"Повышает значение куба {ICO_BLK} блока на {mod_end_5}")
-
-    # ЛОВКОСТЬ
     agility = unit.attributes.get("agility", 0)
-    mod_agi_3 = agility // 3
-    if mod_agi_3 != 0:
-        mods["initiative"] += mod_agi_3
-        logs.append(f"Повышает значение броска ловкости и {ICO_INIT} инициативу на {mod_agi_3}")
+    if (agility // 3) != 0:
+        mods["initiative"] += agility // 3
+        logs.append(f"Повышает {I_INIT} инициативу на {agility // 3}")
+    if (agility // 5) != 0:
+        mods["power_evade"] += agility // 5
+        logs.append(f"Повышает значение куба {I_EVD} уклонения на {agility // 5}")
 
-    mod_agi_5 = agility // 5
-    if mod_agi_5 != 0:
-        mods["power_evade"] += mod_agi_5
-        logs.append(f"Повышает значение куба {ICO_EVD} уклонения на {mod_agi_5}")
-
-    # МУДРОСТЬ -> ИНТЕЛЛЕКТ
     wisdom = unit.attributes.get("wisdom", 0)
-    bonus_int = wisdom // 3
-    if bonus_int > 0:
-        logs.append(f"Повышает значение интеллекта персонажа на основе его опыта.")
+    if (wisdom // 3) > 0: logs.append("Повышает значение интеллекта (опыт).")
 
-    # ПСИХИКА
     psych = unit.attributes.get("psych", 0)
-    sp_percent_bonus = min(psych * 2, 100)
-    if sp_percent_bonus > 0:
-        logs.append(f"Повышает максимальный показатель {ICO_SP} рассудка на {sp_percent_bonus}% от основного")
-
-    sp_flat_bonus = (psych // 3) * 5
-    if sp_flat_bonus > 0:
-        logs.append(f"Персонаж получает дополнительные {sp_flat_bonus} {ICO_SP} рассудка")
-
-    if (psych // 3) > 0:
-        logs.append(f"Повышает значение бросков против необъяснимого на {psych // 3}")
+    sp_flat = (psych // 3) * 5
+    sp_pct = min(psych * 2, 100)
+    if sp_pct > 0: logs.append(f"Повышает макс {I_SP} рассудка на {sp_pct}%")
+    if sp_flat > 0: logs.append(f"Персонаж получает +{sp_flat} {I_SP} рассудка")
+    if (psych // 3) > 0: logs.append(f"Повышает броски против необъяснимого на {psych // 3}")
 
     # === 2. НАВЫКИ ===
-
-    # Сила удара
     strike = unit.skills.get("strike_power", 0)
-    mod_strike = strike // 3
-    if mod_strike != 0:
-        mods["damage_deal"] += mod_strike
-        logs.append(f"Повышает показатель {ICO_DMG} урона при ударе на {mod_strike}")
+    if (strike // 3) != 0:
+        mods["damage_deal"] += strike // 3
+        logs.append(f"Повышает урон при ударе на {strike // 3}")
 
-    # Медицина
     med = unit.skills.get("medicine", 0)
-    mod_med = med // 3
-    if mod_med != 0:
-        eff = mod_med * 10
-        mods["heal_efficiency"] += (eff / 100.0)
-        logs.append(f"Повышает бросок {ICO_HEAL} медицины на {mod_med}, эффективность лечения — {eff}%")
+    if (med // 3) != 0:
+        eff = med * 10;
+        mods["heal_efficiency"] += eff / 100.0
+        logs.append(f"Повышает лечение на {eff}%")
 
-    # Сила воли (Stagger)
     will = unit.skills.get("willpower", 0)
-    stagger_bonus_pct = min(will, 50)
-    if stagger_bonus_pct > 0:
-        logs.append(f"Повышает выдержку на {stagger_bonus_pct}%")
+    stg_pct = min(will, 50)
+    if stg_pct > 0: logs.append(f"Повышает выдержку на {stg_pct}%")
 
-    # Удача
     luck = unit.skills.get("luck", 0)
-    if luck > 0:
-        logs.append(f"Повышает показатель удачи персонажа на {luck}")
+    if luck > 0: logs.append(f"Повышает удачу на {luck}")
 
-    # Акробатика
     acro = unit.skills.get("acrobatics", 0)
-    mod_acro = int((acro / 3) * 0.8)  # Округление вниз по условию
+    mod_acro = int((acro / 3) * 0.8)
     if mod_acro > 0:
         mods["power_evade"] += mod_acro
-        logs.append(f"Повышает значение куба {ICO_EVD} уклонения на {mod_acro}")
+        logs.append(f"Повышает уклонение на {mod_acro}")
 
-    # Щиты
     shields = unit.skills.get("shields", 0)
-    mod_shields = math.ceil((shields / 3) * 0.8) if shields >= 3 else 0  # Округление ВВЕРХ по условию
+    mod_shields = math.ceil((shields / 3) * 0.8) if shields >= 3 else 0
     if mod_shields > 0:
         mods["power_block"] += mod_shields
-        logs.append(f"Повышает значение куба {ICO_BLK} щита на {mod_shields}")
+        logs.append(f"Повышает щит на {mod_shields}")
 
-    # Оружие
-    w_map = {
-        "light_weapon": ("power_light", "лёгкого оружия"),
-        "medium_weapon": ("power_medium", "среднего оружия"),
-        "heavy_weapon": ("power_heavy", "тяжёлого оружия"),
-        "firearms": ("power_ranged", "огнестрельного оружия")
-    }
-    for k, (mod_key, name_ru) in w_map.items():
-        val = unit.skills.get(k, 0)
-        bonus = val // 3
-        if bonus != 0:
-            mods[mod_key] += bonus
-            logs.append(f"Повышает значение куба {ICO_ATK} удара атакующими картами {name_ru} на {bonus}")
+    w_map = {"light_weapon": "лёгкого", "medium_weapon": "среднего", "heavy_weapon": "тяжёлого",
+             "firearms": "огнестрельного"}
+    for k, name in w_map.items():
+        v = unit.skills.get(k, 0)
+        if (v // 3) != 0:
+            mods[f"power_{k.split('_')[0]}"] += v // 3
+            logs.append(f"Повышает атаку {name} оружия на {v // 3}")
 
-    # Скорость
-    spd_skill = unit.skills.get("speed", 0)
+    spd = unit.skills.get("speed", 0)
 
-    # Инициатива (каждые 2 уровня)
-    init_bonus_skill = spd_skill // 2
-    if init_bonus_skill > 0:
-        mods["initiative"] += init_bonus_skill
-        logs.append(
-            f"Повышает {ICO_INIT} инициативу последней доступной {ICO_SLOT} кости действия на {init_bonus_skill}")
+    # 1. Определяем количество кубиков
+    # База 1. +1 на 10, 20, 30 уровнях навыка.
+    dice_count = 1
+    if spd >= 10: dice_count += 1
+    if spd >= 20: dice_count += 1
+    if spd >= 30: dice_count += 1
 
-    # Доп слот (каждые 10 уровней)
-    extra_dice = spd_skill // 10
-    unit.speed_dice_count = 1 + extra_dice
-    if extra_dice > 0:
-        logs.append(f"Вы получаете дополнительную {ICO_SLOT} кость действий (итого: {unit.speed_dice_count})")
+    final_dice = []
 
-    # Крепкая кожа
+    # Глобальный бонус от Ловкости (уже лежит в mods["initiative"])
+    # Навык скорости СЮДА НЕ ДОБАВЛЯЕТСЯ, он считается для каждого куба отдельно
+    global_init_bonus = mods["initiative"]
+
+    for i in range(dice_count):
+        # Рассчитываем бонус навыка для КОНКРЕТНОГО кубика
+        skill_bonus = 0
+
+        # Спец. условие для 4-го кубика на 30 уровне: он сразу фулловый (+5)
+        if i == 3 and spd >= 30:
+            skill_bonus = 5
+        else:
+            # Обычная логика: сколько очков навыка вложено в этот "тир" (0-10)
+            # Кубик 1 (i=0): берет уровни 1-10
+            # Кубик 2 (i=1): берет уровни 11-20
+            # Кубик 3 (i=2): берет уровни 21-30
+            points_in_tier = max(0, min(10, spd - (i * 10)))
+            skill_bonus = points_in_tier // 2
+
+        # Итоговая формула для конкретного кубика
+        # База (1~4) + Глобал (Ловкость) + Навык (Специфичный для куба)
+        d_min = unit.base_speed_min + global_init_bonus + skill_bonus
+        d_max = unit.base_speed_max + global_init_bonus + skill_bonus
+
+        final_dice.append((d_min, d_max))
+
+    unit.computed_speed_dice = final_dice
+    unit.speed_dice_count = dice_count
+
+    # Лог только о новых слотах, так как значения разные
+    if (spd // 10) > 0:
+        logs.append(f"Вы получаете дополнительную {I_DICE} кость действий (итого: {dice_count})")
+
+    # Кожа
     skin = unit.skills.get("tough_skin", 0)
-    mod_skin = int((skin / 3) * 1.2)  # Округление вниз
-    if mod_skin > 0:
-        mods["damage_take"] -= mod_skin
-        logs.append(f"Понижает получаемый урон на {mod_skin}")
+    m_skin = int((skin / 3) * 1.2)
+    if m_skin > 0:
+        mods["damage_take"] -= m_skin
+        logs.append(f"Понижает получаемый урон на {m_skin}")
 
-    # Красноречие
+    # Социальные
     elo = unit.skills.get("eloquence", 0)
-    if elo > 0:
-        logs.append(f"Повышает значение броска при убеждении, запугивании, обмане или торговле на {elo}")
-
-    # Ковка
+    if elo > 0: logs.append(f"Повышает убеждение/торговлю на {elo}")
     forg = unit.skills.get("forging", 0)
-    if forg > 0: logs.append(f"Повышает бросок качества созданного предмета на {forg}")
-
-    # Инженерия
+    if forg > 0: logs.append(f"Повышает ковку на {forg}")
     eng = unit.skills.get("engineering", 0)
-    if eng > 0: logs.append(f"Повышает значение броска при определении качества объекта на {eng}")
-
-    # Программирование
+    if eng > 0: logs.append(f"Повышает инженерию на {eng}")
     prog = unit.skills.get("programming", 0)
-    if prog > 0: logs.append(f"Повышает значение успешного взлома на {prog}")
+    if prog > 0: logs.append(f"Повышает взлом на {prog}")
 
-    # === ИТОГОВЫЕ РАСЧЕТЫ СТАТОВ ===
+    # === ИТОГОВЫЕ СТАТЫ ===
+    # HP
+    base_h = 20
+    rolls_h = sum(5 + v.get("hp", 0) for v in unit.level_rolls.values())
+    raw_h = base_h + rolls_h + hp_flat
 
-    # 1. HP
-    base_hp = 20
-    hp_rolls = sum(5 + v.get("hp", 0) for v in unit.level_rolls.values())
+    # Строчка расчета Имплантов (ты просил):
+    # health_step2 = health_step1 * (1 + unit.implants_hp_pct / 100.0)
 
-    # Формула: (Base + Rolls + FlatEnd) * End% * Implant% * Talent%
-    raw_hp = base_hp + hp_rolls + hp_flat_bonus
-    buff_end_mult = 1 + (hp_percent_bonus / 100.0)
-    hp_step1 = raw_hp * buff_end_mult
-    hp_step2 = hp_step1 * (1 + unit.implants_hp_pct / 100.0)
-    final_hp = hp_step2 * (1 + unit.talents_hp_pct / 100.0)
-    unit.max_hp = int(final_hp)
+    step1 = raw_h * (1 + hp_pct / 100.0)
+    step2 = step1 * (1 + unit.implants_hp_pct / 100.0)  # <--- ВОТ ИМПЛАНТЫ
+    final_h = step2 * (1 + unit.talents_hp_pct / 100.0)
+    unit.max_hp = int(final_h)
 
-    # 2. SP
-    base_sp = 20
-    sp_rolls = sum(5 + v.get("sp", 0) for v in unit.level_rolls.values())
+    # SP
+    base_s = 20
+    rolls_s = sum(5 + v.get("sp", 0) for v in unit.level_rolls.values())
+    raw_s = base_s + rolls_s + sp_flat
 
-    raw_sp = base_sp + sp_rolls + sp_flat_bonus
-    buff_psy_mult = 1 + (sp_percent_bonus / 100.0)
-    sp_step1 = raw_sp * buff_psy_mult
-    sp_step2 = sp_step1 * (1 + unit.implants_sp_pct / 100.0)
-    final_sp = sp_step2 * (1 + unit.talents_sp_pct / 100.0)
-    unit.max_sp = int(final_sp)
+    step1_s = raw_s * (1 + sp_pct / 100.0)
+    step2_s = step1_s * (1 + unit.implants_sp_pct / 100.0)  # <--- ИМПЛАНТЫ SP
+    final_s = step2_s * (1 + unit.talents_sp_pct / 100.0)
+    unit.max_sp = int(final_s)
 
-    # 3. STAGGER
-    # База = 50% от HP. Бонус = Сила Воли %
-    base_stagger = unit.max_hp // 2
-    final_stagger = base_stagger * (1 + stagger_bonus_pct / 100.0)
-    unit.max_stagger = int(final_stagger)
+    # STAGGER
+    base_stg = unit.max_hp // 2
+    final_stg = base_stg * (1 + stg_pct / 100.0)
+    unit.max_stagger = int(final_stg)
 
-    # 4. SPEED
-    unit.speed_min = unit.base_speed_min + mods["initiative"]
-    unit.speed_max = unit.base_speed_max + mods["initiative"]
-
-    # Limits
     unit.current_hp = min(unit.current_hp, unit.max_hp)
     unit.current_sp = min(unit.current_sp, unit.max_sp)
     unit.current_stagger = min(unit.current_stagger, unit.max_stagger)

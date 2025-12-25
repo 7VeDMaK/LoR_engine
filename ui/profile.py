@@ -45,10 +45,9 @@ def render_profile_page():
 
     st.divider()
 
-    # === ЛЕЙАУТ ===
     col_l, col_r = st.columns([1, 3], gap="small")
 
-    # --- ЛЕВАЯ (АВАТАР + БАЗА) ---
+    # --- ЛЕВАЯ КОЛОНКА ---
     with col_l:
         img = unit.avatar if unit.avatar and os.path.exists(unit.avatar) else "https://placehold.co/150x150/png?text=?"
         st.image(img, use_container_width=True)
@@ -62,75 +61,109 @@ def render_profile_page():
 
         st.caption("Базовый Интеллект")
         unit.base_intellect = st.number_input("Int Base", 1, 30, unit.base_intellect, label_visibility="collapsed")
-        st.info(f"Интеллект: **{unit.base_intellect + (unit.attributes['wisdom'] // 3)}**\n(Base + Wis/3)")
+        st.info(f"Интеллект: **{unit.base_intellect + (unit.attributes['wisdom'] // 3)}**")
 
-    # --- ПРАВАЯ (СТАТЫ) ---
+        st.divider()
+        st.markdown(f"**🧊 Скорость:**")
+        # Отображаем индивидуально рассчитанные кубики
+        if unit.computed_speed_dice:
+            for d in unit.computed_speed_dice:
+                st.markdown(f"🧊 {d[0]}~{d[1]}")
+        else:
+            # Фолбек для 0 уровня
+            st.markdown(f"🧊 {unit.speed_min}~{unit.speed_max}")
+
+    # --- ПРАВАЯ КОЛОНКА ---
     with col_r:
-        # 1. ТЕКУЩИЕ ПОКАЗАТЕЛИ И ИМПЛАНТЫ
-        with st.container(border=True):
-            with st.expander("⚙️ Импланты и Таланты (%)"):
-                pc1, pc2, pc3, pc4 = st.columns(4)
-                unit.implants_hp_pct = pc1.number_input("HP Импл %", 0, 200, unit.implants_hp_pct)
-                unit.implants_sp_pct = pc2.number_input("SP Импл %", 0, 200, unit.implants_sp_pct)
-                unit.talents_hp_pct = pc3.number_input("HP Талант %", 0, 200, unit.talents_hp_pct)
-                unit.talents_sp_pct = pc4.number_input("SP Талант %", 0, 200, unit.talents_sp_pct)
+        # ИМПЛАНТЫ И РЕЗИСТЫ
+        with st.expander("⚙️ Импланты, Резисты и Броня", expanded=False):
+            c1, c2 = st.columns(2)
+            c1.markdown("**Импланты и Таланты (%)**")
+            pc1, pc2 = c1.columns(2)
+            unit.implants_hp_pct = pc1.number_input("HP Импл %", 0, 200, unit.implants_hp_pct)
+            unit.implants_sp_pct = pc2.number_input("SP Импл %", 0, 200, unit.implants_sp_pct)
+            unit.talents_hp_pct = pc1.number_input("HP Талант %", 0, 200, unit.talents_hp_pct)
+            unit.talents_sp_pct = pc2.number_input("SP Талант %", 0, 200, unit.talents_sp_pct)
 
-            sc1, sc2, sc3, sc4 = st.columns(4)
+            c2.markdown("**Броня и Резисты**")
+            unit.armor_name = c2.text_input("Название Брони", unit.armor_name)
+            r1, r2, r3 = c2.columns(3)
+            unit.hp_resists.slash = r1.number_input("Slash", 0.1, 2.0, unit.hp_resists.slash)
+            unit.hp_resists.pierce = r2.number_input("Pierce", 0.1, 2.0, unit.hp_resists.pierce)
+            unit.hp_resists.blunt = r3.number_input("Blunt", 0.1, 2.0, unit.hp_resists.blunt)
+
+        # ТЕКУЩИЕ СТАТЫ
+        with st.container(border=True):
+            sc1, sc2, sc3 = st.columns(3)
             sc1.markdown(f"**HP** (Max {unit.max_hp})");
             unit.current_hp = sc1.number_input("hp", 0, 9999, unit.current_hp, label_visibility="collapsed")
             sc2.markdown(f"**SP** (Max {unit.max_sp})");
             unit.current_sp = sc2.number_input("sp", -45, 9999, unit.current_sp, label_visibility="collapsed")
             sc3.markdown(f"**Stagger** (Max {unit.max_stagger})");
             unit.current_stagger = sc3.number_input("stg", 0, 9999, unit.current_stagger, label_visibility="collapsed")
-            sc4.markdown(f"**Скорость** ({unit.speed_dice_count}🎲)");
-            sc4.write(f"{unit.speed_min} ~ {unit.speed_max}")
 
-        # 2. ОЧКИ И БРОСКИ
+        # ОЧКИ И БРОСКИ
         with st.container(border=True):
-            # Атрибуты: 24 на старте + (lvl-1) за ап
-            # Навыки: 36 на старте + (lvl-1)*2 за ап
-
             lvl_growth = max(0, unit.level - 1)
-            total_attr_points = 25 + lvl_growth
-            total_skill_points = 38 + (lvl_growth * 2)
-            total_talent_points = unit.level // 3
+            total_attr = 25 + lvl_growth
+            total_skill = 38 + (lvl_growth * 2)
+            total_tal = unit.level // 3
 
             spent_a = sum(unit.attributes.values())
             spent_s = sum(unit.skills.values())
             spent_t = len(unit.talents)
 
             c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
-            c1.metric("Хар-ки", total_attr_points - spent_a)
-            c2.metric("Навыки", total_skill_points - spent_s)
-            c3.metric("Таланты", total_talent_points - spent_t)
+            c1.metric("Хар-ки", total_attr - spent_a)
+            c2.metric("Навыки", total_skill - spent_s)
+            c3.metric("Таланты", total_tal - spent_t)
 
-            missing = [i for i in range(3, unit.level + 1, 3) if str(i) not in unit.level_rolls]
-            if missing and c4.button(f"🎲 Бросок d5 ({missing[0]}..)"):
-                for l in missing: unit.level_rolls[str(l)] = {"hp": random.randint(1, 5), "sp": random.randint(1, 5)}
-                UnitLibrary.save_unit(unit);
-                st.rerun()
+            with st.expander("🎲 История Бросков HP/SP"):
+                missing = [i for i in range(3, unit.level + 1, 3) if str(i) not in unit.level_rolls]
+                if missing:
+                    if st.button("Бросить кубики"):
+                        for l in missing: unit.level_rolls[str(l)] = {"hp": random.randint(1, 5),
+                                                                      "sp": random.randint(1, 5)}
+                        UnitLibrary.save_unit(unit);
+                        st.rerun()
 
-        # 3. ХАРАКТЕРИСТИКИ
+                if unit.level_rolls:
+                    for lvl in sorted(map(int, unit.level_rolls.keys())):
+                        r = unit.level_rolls[str(lvl)]
+                        st.caption(f"Lvl {lvl}: +{5 + r['hp']} HP, +{5 + r['sp']} SP (d5: {r['hp']}, {r['sp']})")
+                else:
+                    st.caption("Нет записей о бросках.")
+
         st.caption("Характеристики")
         acols = st.columns(5)
         for i, k in enumerate(["strength", "endurance", "agility", "wisdom", "psych"]):
             unit.attributes[k] = acols[i].number_input(ATTR_LABELS[k], 0, 30, unit.attributes[k])
 
-        # 4. НАВЫКИ
         st.caption("Навыки")
         with st.expander("Список навыков", expanded=True):
             scols = st.columns(3)
             for i, k in enumerate(SKILL_LABELS.keys()):
                 unit.skills[k] = scols[i % 3].number_input(SKILL_LABELS[k], 0, 30, unit.skills[k])
 
-    # --- ПЕРЕСЧЕТ ---
     logs = unit.recalculate_stats()
 
     st.markdown("---")
     with st.expander("📜 Подробный лог бонусов", expanded=False):
         if logs:
             for l in logs:
-                st.write(f"• {l}")
+                color = "gray"
+                if "урона" in l or "атаки" in l or "удара" in l:
+                    color = "red"
+                elif "здоровья" in l or "блока" in l or "щита" in l:
+                    color = "blue"
+                elif "рассудка" in l:
+                    color = "orange"
+                elif "инициативу" in l or "уклонения" in l or "кость" in l:
+                    color = "green"
+                elif "интеллекта" in l:
+                    color = "violet"
+
+                st.markdown(f":{color}[• {l}]")
         else:
             st.caption("Нет активных бонусов.")
 
