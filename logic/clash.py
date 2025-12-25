@@ -4,6 +4,7 @@ from core.models import Unit, Dice, DiceType
 from logic.context import RollContext
 from logic.status_definitions import STATUS_REGISTRY
 from logic.card_scripts import SCRIPTS_REGISTRY
+from logic.passives import PASSIVE_REGISTRY  # <--- ВАЖНЫЙ ИМПОРТ
 
 
 class ClashSystem:
@@ -22,7 +23,7 @@ class ClashSystem:
         battle_report = []
 
         # 1. Начало боя (On Combat Start / On Use)
-        # Сначала запускаем события, они пишут в self.logs
+        # Сначала запускаем события (Статусы + Пассивки)
         self._trigger_unit_event("on_combat_start", attacker, self.log)
         self._trigger_unit_event("on_combat_start", defender, self.log)
 
@@ -34,15 +35,12 @@ class ClashSystem:
 
         # === ВАЖНО: Если что-то произошло в начале (лечение, баффы), добавляем это в отчет ===
         if self.logs:
-            # Собираем всё, что накопилось в логах, в одну строку
             start_details = " | ".join(self.logs)
             battle_report.append({
                 "round": "Start",
                 "rolls": "Effects",
                 "details": start_details
             })
-            # Очищаем логи, чтобы они не дублировались, хотя в current implementation мы просто идем дальше
-            # self.logs = []
         # ===================================================================================
 
         # Подготовка карт
@@ -57,7 +55,7 @@ class ClashSystem:
             # Проверка смерти/стаггера перед каждым кубиком
             if attacker.is_dead() or defender.is_dead():
                 break
-            if attacker.is_staggered():  # Оглушенный не бьет
+            if attacker.is_staggered():
                 break
 
             die_a = ac.dice_list[i] if i < len(ac.dice_list) else None
@@ -73,9 +71,6 @@ class ClashSystem:
 
             res_str = f"{attacker.name} [{val_a}] vs [{val_d}] {defender.name}"
             detail = ""
-
-            # --- ФАЗА СРАВНЕНИЯ (CLASH PHASE) ---
-            # ... (начало цикла и фаза броска без изменений) ...
 
             # --- ФАЗА СРАВНЕНИЯ (CLASH PHASE) ---
             if ctx_a and ctx_d:
@@ -112,9 +107,7 @@ class ClashSystem:
             if ctx_a: round_logs.extend(ctx_a.log)
             if ctx_d: round_logs.extend(ctx_d.log)
 
-            # Если были логи (например "Bleed triggers"), добавляем их к деталям
             if round_logs:
-                # Если detail уже есть (например "Wins!"), добавляем логи через разделитель
                 if detail:
                     detail += " | " + " ".join(round_logs)
                 else:
@@ -138,7 +131,6 @@ class ClashSystem:
         if not card or not card.scripts or trigger not in card.scripts:
             return
 
-        # Создаем контекст БЕЗ кубика, но передаем self.logs, чтобы записи попали в общий лог
         ctx = RollContext(source=source, target=target, dice=None, final_value=0, log=self.logs)
 
         for script_data in card.scripts[trigger]:
@@ -159,46 +151,79 @@ class ClashSystem:
         elif advantage == "impossible":
             roll = 0
 
-        # Здесь мы НЕ передаем self.logs, чтобы логи раунда были изолированы в ctx.log
-        # и мы могли их красиво добавить именно в этот раунд
         ctx = RollContext(source=source, target=target, dice=die, final_value=roll)
 
+        # 1. Статусы (Strength, Paralysis)
         for status_id, stack in list(source.statuses.items()):
             if status_id in STATUS_REGISTRY:
                 STATUS_REGISTRY[status_id].on_roll(ctx, stack)
 
+        # 2. Пассивки (Lone Fixer)
+        for pid in source.passives + source.talents:
+            if pid in PASSIVE_REGISTRY:
+                PASSIVE_REGISTRY[pid].on_roll(ctx)
+
+        # 3. Скрипты карты
         self._process_card_scripts("on_roll", ctx)
         return ctx
 
     def _handle_clash_win(self, ctx: RollContext):
+        # Статусы
         for status_id, stack in list(ctx.source.statuses.items()):
             if status_id in STATUS_REGISTRY:
                 STATUS_REGISTRY[status_id].on_clash_win(ctx, stack)
+
+        # Пассивки
+        for pid in ctx.source.passives + ctx.source.talents:
+            if pid in PASSIVE_REGISTRY:
+                PASSIVE_REGISTRY[pid].on_clash_win(ctx)
+
         self._process_card_scripts("on_clash_win", ctx)
 
     def _handle_clash_lose(self, ctx: RollContext):
+        # Статусы
         for status_id, stack in list(ctx.source.statuses.items()):
             if status_id in STATUS_REGISTRY:
                 STATUS_REGISTRY[status_id].on_clash_lose(ctx, stack)
 
+        # Пассивки
+        for pid in ctx.source.passives + ctx.source.talents:
+            if pid in PASSIVE_REGISTRY:
+                PASSIVE_REGISTRY[pid].on_clash_lose(ctx)
+
     def _trigger_unit_event(self, event_name, unit, *args):
+        """Универсальный триггер (Статусы + Пассивки)"""
+        # 1. Статусы
         for status_id, stack in list(unit.statuses.items()):
             if status_id in STATUS_REGISTRY:
                 handler = getattr(STATUS_REGISTRY[status_id], event_name, None)
                 if handler:
                     handler(unit, *args)
 
+        # 2. Пассивки и Таланты
+        all_passives = unit.passives + unit.talents
+        for pid in all_passives:
+            if pid in PASSIVE_REGISTRY:
+                handler = getattr(PASSIVE_REGISTRY[pid], event_name, None)
+                if handler:
+                    handler(unit, *args)
+
     def _apply_damage(self, attacker_ctx: RollContext, defender_ctx: RollContext):
         attacker = attacker_ctx.source
-        defender = attacker_ctx.target
-        if not defender:
-            defender = attacker_ctx.target
+        defender = attacker_ctx.target or attacker_ctx.target  # fallback
 
+        # On Hit Events (Статусы + Пассивки)
         for status_id, stack in list(attacker.statuses.items()):
             if status_id in STATUS_REGISTRY:
                 STATUS_REGISTRY[status_id].on_hit(attacker_ctx, stack)
+
+        for pid in attacker.passives + attacker.talents:
+            if pid in PASSIVE_REGISTRY:
+                PASSIVE_REGISTRY[pid].on_hit(attacker_ctx)
+
         self._process_card_scripts("on_hit", attacker_ctx)
 
+        # Расчет урона
         raw_damage = attacker_ctx.final_value
         dmg_bonus = attacker.get_status("dmg_up") - attacker.get_status("dmg_down")
         raw_damage += dmg_bonus
@@ -219,13 +244,11 @@ class ClashSystem:
             absorbed = min(barrier, final_hp_dmg)
             defender.remove_status("barrier", absorbed)
             final_hp_dmg -= absorbed
-            # Логгируем в контекст атакующего, чтобы отобразилось в раунде
             attacker_ctx.log.append(f"🛡️ Barrier absorbed {absorbed}")
 
         defender.current_hp -= final_hp_dmg
         defender.current_stagger -= final_stg_dmg
 
-        # Добавляем инфо об ударе в лог контекста
         attacker_ctx.log.append(f"💥 Hit {final_hp_dmg} HP")
 
     def _process_card_scripts(self, trigger: str, ctx: RollContext):

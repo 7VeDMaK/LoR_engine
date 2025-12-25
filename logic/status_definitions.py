@@ -55,7 +55,6 @@ class BleedStatus(StatusEffect):
             ctx.log.append(f"🩸 Bleed: {ctx.source.name} takes {dmg} dmg")
 
     def on_turn_end(self, unit, stack):
-        # Здесь ничего не делаем, менеджер сам удалит если duration истек (1 ход по умолчанию)
         return ["Bleed expired"]
 
 

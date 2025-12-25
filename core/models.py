@@ -1,7 +1,7 @@
-# core/models.py
+
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 
 
 class DiceType(Enum):
@@ -102,18 +102,16 @@ class Unit:
     stagger_resists: 'Resistances' = field(default_factory=lambda: Resistances())
     current_card: Optional['Card'] = None
 
-    # === СИСТЕМА СТАТУСОВ ===
-    # Текущие активные статусы {name: amount}
     statuses: Dict[str, int] = field(default_factory=dict)
-
-    # Длительность активных статусов {name: turns_left}
-    # Если статуса нет в этом словаре, считается duration=1 (только этот ход)
     durations: Dict[str, int] = field(default_factory=dict)
-
-    # Очередь отложенных эффектов (Delay)
-    # List of {"name": str, "amount": int, "duration": int, "delay": int}
     delayed_queue: List[dict] = field(default_factory=list)
-    # ========================
+
+    passives: List[str] = field(default_factory=list)
+    # Список ID талантов (строки)
+    talents: List[str] = field(default_factory=list)
+
+    # Память для пассивок (например, { "grit_counter": 30 })
+    memory: Dict[str, Any] = field(default_factory=dict)
 
     resources: Dict[str, int] = field(default_factory=dict)
 
@@ -129,7 +127,7 @@ class Unit:
         :param duration: Сколько ходов длится эффект (по умолчанию 1).
         :param delay: Через сколько ходов активируется (0 = сразу).
         """
-        # 1. Если есть задержка - в очередь
+        
         if delay > 0:
             self.delayed_queue.append({
                 "name": name,
@@ -139,16 +137,16 @@ class Unit:
             })
             return
 
-        # 2. Если задержки нет - применяем сразу
+        
         if name not in self.statuses:
             self.statuses[name] = 0
         self.statuses[name] += amount
 
-        # Лимиты
+        
         if name == "charge" and self.statuses[name] > 20: self.statuses[name] = 20
         if name == "poise" and self.statuses[name] > 99: self.statuses[name] = 99
 
-        # Обновляем длительность (берем максимум из текущей и новой)
+        
         current_dur = self.durations.get(name, 0)
         self.durations[name] = max(current_dur, duration)
 

@@ -1,3 +1,4 @@
+# ui/simulator.py
 import streamlit as st
 import sys
 import random
@@ -7,6 +8,7 @@ from contextlib import contextmanager
 from core.models import Card
 from logic.clash import ClashSystem
 from logic.statuses import StatusManager
+from logic.passives import PASSIVE_REGISTRY  # <--- ВАЖНЫЙ ИМПОРТ
 from ui.components import render_unit_stats, render_resist_inputs, card_selector_ui, render_card_visual
 
 
@@ -33,14 +35,12 @@ def run_combat():
     real_card_1 = p1.current_card
     real_card_2 = p2.current_card
 
-    # Если оглушен - карта меняется на заглушку
     if p1_stag: p1.current_card = Card(name="Stunned", dice_list=[])
     if p2_stag: p2.current_card = Card(name="Stunned", dice_list=[])
 
     sys_clash = ClashSystem()
 
-    # === ВРЕМЕННЫЙ РАСЧЕТ СКОРОСТИ В UI ===
-    # (Пока нет полноценного BattleManager, считаем тут)
+    # === ВРЕМЕННЫЙ РАСЧЕТ СКОРОСТИ ===
     sp1 = random.randint(1, 6) + p1.get_status("haste") - p1.get_status("slow")
     sp2 = random.randint(1, 6) + p2.get_status("haste") - p2.get_status("slow")
     diff = max(1, sp1) - max(1, sp2)
@@ -56,17 +56,13 @@ def run_combat():
         adv_p1 = "impossible"
     elif diff <= -4:
         adv_p1 = "disadvantage"
-    # ======================================
 
     with capture_output() as captured:
-        # Запускаем основной цикл боя
         logs = sys_clash.resolve_card_clash(p1, p2, adv_p1, adv_p2)
 
-    # Сохраняем логи
     st.session_state['battle_logs'] = logs
     st.session_state['script_logs'] = captured.getvalue()
 
-    # Сообщение о восстановлении от стаггера (для следующего хода)
     msg = []
     if p1_stag:
         p1.current_stagger = p1.max_stagger
@@ -77,11 +73,32 @@ def run_combat():
 
     st.session_state['turn_message'] = " ".join(msg)
 
-    # Возвращаем настоящие карты (если были оглушены)
     if p1_stag: p1.current_card = real_card_1
     if p2_stag: p2.current_card = real_card_2
 
+    # === КОНЕЦ ХОДА (Пассивки/Таланты) ===
+    # Сначала срабатывают таланты (например, начислить силу за потерянное ХП)
+    def trigger_end_round_passives(unit):
+        logs = []
+        for pid in unit.passives + unit.talents:
+            if pid in PASSIVE_REGISTRY:
+                # Передаем unit и функцию-логгер
+                PASSIVE_REGISTRY[pid].on_round_end(unit, lambda m: logs.append(m))
+        return logs
+
+    pass_logs_p1 = trigger_end_round_passives(p1)
+    pass_logs_p2 = trigger_end_round_passives(p2)
+
+    if pass_logs_p1:
+        st.session_state['battle_logs'].append(
+            {"round": "End", "rolls": "P1 Talents", "details": ", ".join(pass_logs_p1)})
+    if pass_logs_p2:
+        st.session_state['battle_logs'].append(
+            {"round": "End", "rolls": "P2 Talents", "details": ", ".join(pass_logs_p2)})
+
     # === КОНЕЦ ХОДА (Уменьшение длительности статусов) ===
+    # Вызываем после талантов, чтобы только что полученные статусы (Delay=0, Dur=2)
+    # корректно уменьшили Duration на 1 и перешли в следующий ход.
     end_turn_logs_p1 = StatusManager.process_turn_end(p1)
     end_turn_logs_p2 = StatusManager.process_turn_end(p2)
 
@@ -126,7 +143,6 @@ def render_simulator_page():
 
     st.divider()
 
-    # Кнопка запуска
     btn_col = st.columns([1, 2, 1])[1]
     with btn_col:
         label = "🔥 CLASH START 🔥"
@@ -134,7 +150,6 @@ def render_simulator_page():
             label = "⚔️ ONE-SIDED ATTACK"
         st.button(label, type="primary", on_click=run_combat, use_container_width=True)
 
-    # Отчет
     st.subheader("📜 Battle Report")
     if st.session_state['turn_message']:
         st.success(st.session_state['turn_message'])
@@ -153,16 +168,15 @@ def render_simulator_page():
                 c1.code(log.get('rolls', '0 vs 0'))
                 det = log.get('details', '')
 
-                # Подсветка разных типов событий
                 if "Win" in det:
                     c3.write(f"⚔️ {det}")
                 elif "One-Sided" in det:
                     c3.error(det)
                 elif "Stagger" in det:
                     c3.warning(det)
-                elif "Start" in str(log.get('round')):  # Подсветка фазы старта
+                elif "Start" in str(log.get('round')):
                     c3.info(det)
-                elif "End" in str(log.get('round')):  # Подсветка фазы конца
+                elif "End" in str(log.get('round')):
                     c3.caption(det)
                 else:
                     c3.info(det)
