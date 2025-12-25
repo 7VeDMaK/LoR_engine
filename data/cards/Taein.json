@@ -26,6 +26,104 @@
           "scripts": {}
         }
       ]
+    },
+    {
+      "id": "буйство_c5cf",
+      "name": "Буйство",
+      "tier": 1,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {},
+      "dice": [
+        {
+          "type": "blunt",
+          "base_min": 2,
+          "base_max": 4,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "bleed",
+                  "stack": 1,
+                  "duration": 1,
+                  "delay": 1,
+                  "target": "target"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "pierce",
+          "base_min": 3,
+          "base_max": 5,
+          "scripts": {}
+        },
+        {
+          "type": "slash",
+          "base_min": 3,
+          "base_max": 5,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "bleed",
+                  "stack": 1,
+                  "duration": 1,
+                  "delay": 1,
+                  "target": "target"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "увечья_37da",
+      "name": "Увечья",
+      "tier": 1,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {},
+      "dice": [
+        {
+          "type": "slash",
+          "base_min": 1,
+          "base_max": 6,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "restore_hp",
+                "params": {
+                  "amount": 1,
+                  "target": "self"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "slash",
+          "base_min": 2,
+          "base_max": 6,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "restore_hp",
+                "params": {
+                  "amount": 1,
+                  "target": "self"
+                }
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }
