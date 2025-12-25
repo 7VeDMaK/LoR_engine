@@ -1,22 +1,26 @@
-# logic/passives.py
 from logic.modifiers import RollContext
 
-# База данных всех пассивок в игре
+# Реестр всех доступных в игре пассивок
 PASSIVE_REGISTRY = {}
-
 
 def register_passive(name):
     def decorator(func):
         PASSIVE_REGISTRY[name] = func
         return func
-
     return decorator
 
+# --- Реализация конкретных пассивок ---
 
-# Реализация пассивки "Одиночка"
-@register_passive("LoneFixer")
-def p_lone_fixer(context: RollContext):
-    # Условие: проверяем, атакует ли тот, у кого эта пассивка (упрощено)
-    # В реальности тут будет проверка context.source_unit.allies_count == 0
+@register_passive("Lone Fixer")
+def p_lone_fixer(ctx: RollContext):
+    # Упрощение: всегда дает +3
+    ctx.modify_power(3, "Lone Fixer")
 
-    context.add_power(3, "Lone Fixer")
+@register_passive("Paralysis")
+def p_paralysis(ctx: RollContext):
+    # Уменьшает результат на 2
+    ctx.modify_power(-2, "Paralysis")
+
+@register_passive("Strength")
+def p_strength(ctx: RollContext):
+    ctx.modify_power(1, "Strength")

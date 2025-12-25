@@ -1,4 +1,3 @@
-# engine.py
 import random
 from core.events import EventManager
 from core.models import Unit, Dice
@@ -7,32 +6,28 @@ from logic.passives import PASSIVE_REGISTRY
 
 
 class CombatEngine:
-    def __init__(self):
+    def __init__(self, seed=None):
         self.events = EventManager()
-        self.rng = random.Random(42)  # Фиксированный seed для детерминированности
+        self.rng = random.Random(seed)
 
     def initialize_unit(self, unit: Unit):
-        """Подключает пассивки юнита к шине событий"""
+        """Подключает пассивки юнита к событиям"""
         for pid in unit.passive_ids:
             if pid in PASSIVE_REGISTRY:
-                passive_func = PASSIVE_REGISTRY[pid]
-                # Подписываем пассивку на событие "BEFORE_ROLL"
-                # В сложной системе пассивка сама скажет, на какие события ей надо
-                self.events.subscribe("BEFORE_ROLL", passive_func, priority=50)
+                # В полной версии пассивка сама знает свой триггер.
+                # Здесь мы жестко привязываем всё к BEFORE_ROLL для простоты.
+                self.events.subscribe("BEFORE_ROLL", PASSIVE_REGISTRY[pid])
 
-    def roll_dice(self, unit: Unit, target: Unit, dice: Dice):
-        # 1. Кидаем "сырой" кубик
-        raw_roll = self.rng.randint(dice.min_val, dice.max_val)
+    def roll_attack(self, attacker: Unit, defender: Unit, min_d: int, max_d: int):
+        # 1. Базовый рандом
+        base_roll = self.rng.randint(min_d, max_d)
 
-        # 2. Создаем контекст (коробку с данными)
-        context = RollContext(
-            source_unit=unit,
-            target_unit=target,
-            dice=dice,
-            final_value=raw_roll
-        )
+        # 2. Подготовка контекста
+        dice = Dice(min_d, max_d, base_roll)
+        ctx = RollContext(attacker, defender, dice, base_roll)
+        ctx.log.append(f"[Base Roll] {base_roll}")
 
-        # 3. Кричим в чат: "Мы собираемся зафиксировать бросок! Кто хочет поменять?"
-        self.events.emit("BEFORE_ROLL", context)
+        # 3. Запуск событий (Пассивки меняют ctx)
+        self.events.emit("BEFORE_ROLL", ctx)
 
-        return context
+        return ctx
