@@ -1,159 +1,139 @@
-# ui/profile.py
 import streamlit as st
-from core.models import Unit, Resistances
+import random
+import os
+from core.models import Unit
 from core.unit_library import UnitLibrary
+
+ATTR_LABELS = {"strength": "Сила", "endurance": "Стойкость", "agility": "Ловкость", "wisdom": "Мудрость",
+               "psych": "Психика"}
+SKILL_LABELS = {
+    "strike_power": "Сила удара", "medicine": "Медицина", "willpower": "Сила воли", "luck": "Удача",
+    "acrobatics": "Акробатика", "shields": "Щиты", "tough_skin": "Крепкая кожа", "speed": "Скорость",
+    "light_weapon": "Лёгкое оружие", "medium_weapon": "Среднее оружие", "heavy_weapon": "Тяжёлое оружие",
+    "firearms": "Огнестрел",
+    "eloquence": "Красноречие", "forging": "Ковка", "engineering": "Инженерия", "programming": "Программирование"
+}
+
+
+def save_avatar_file(uploaded, unit_name):
+    os.makedirs("data/avatars", exist_ok=True)
+    safe = "".join(c for c in unit_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(" ", "_")
+    path = f"data/avatars/{safe}.{uploaded.name.split('.')[-1]}"
+    with open(path, "wb") as f: f.write(uploaded.getbuffer())
+    return path
 
 
 def render_profile_page():
-    st.header("👤 Character Profile")
-
     if 'roster' not in st.session_state or not st.session_state['roster']:
-        st.warning("Roster empty. Creating new...")
-        st.session_state['roster'] = {"New Unit": Unit("New Unit")}
+        st.session_state['roster'] = UnitLibrary.load_all() or {"New Unit": Unit("New Unit")}
 
-    roster_names = list(st.session_state['roster'].keys())
-
+    roster = st.session_state['roster']
     c1, c2 = st.columns([3, 1])
-    selected_name = c1.selectbox("Select Character", roster_names, key="profile_selector")
-
-    if c2.button("➕ New Unit"):
-        new_name = f"Unit_{len(roster_names) + 1}"
-        new_unit = Unit(name=new_name)
-        st.session_state['roster'][new_name] = new_unit
-        # Сразу сохраняем, чтобы файл создался
-        UnitLibrary.save_unit(new_unit)
+    sel = c1.selectbox("Персонаж", list(roster.keys()))
+    if c2.button("➕"):
+        n = f"Unit_{len(roster) + 1}";
+        u = Unit(n);
+        roster[n] = u;
+        UnitLibrary.save_unit(u);
         st.rerun()
 
-    unit = st.session_state['roster'][selected_name]
+    unit = roster[sel]
 
-    # --- КНОПКА СОХРАНЕНИЯ ---
-    col_save, col_info = st.columns([1, 5])
-    with col_save:
-        if st.button("💾 SAVE", type="primary"):
-            if UnitLibrary.save_unit(unit):
-                st.toast(f"Character '{unit.name}' saved!", icon="✅")
-            else:
-                st.error("Failed to save.")
+    if st.button("💾 СОХРАНИТЬ", type="primary", use_container_width=True):
+        UnitLibrary.save_unit(unit);
+        st.toast("Сохранено!", icon="✅")
 
     st.divider()
 
-    # --- 2. ОБЩАЯ ИНФОРМАЦИЯ (Header) ---
-    col_img, col_info = st.columns([1, 4])
-    with col_img:
-        st.image("https://placehold.co/150x150/png?text=Unit", caption="Avatar")
+    # === ЛЕЙАУТ ===
+    col_l, col_r = st.columns([1, 3], gap="small")
 
-    with col_info:
-        c_name, c_lvl, c_rank = st.columns([2, 1, 1])
+    # --- ЛЕВАЯ (АВАТАР + БАЗА) ---
+    with col_l:
+        img = unit.avatar if unit.avatar and os.path.exists(unit.avatar) else "https://placehold.co/150x150/png?text=?"
+        st.image(img, use_container_width=True)
+        upl = st.file_uploader("Арт", type=['png', 'jpg'], label_visibility="collapsed")
+        if upl: unit.avatar = save_avatar_file(upl, unit.name); UnitLibrary.save_unit(unit); st.rerun()
 
-        # Переименование - сложная штука, т.к. имя = ключ словаря и имя файла
-        # Пока сделаем простое редактирование поля, но чтобы оно применилось в словарь, надо сохранить
-        new_name = c_name.text_input("Name", unit.name)
-        if new_name != unit.name:
-            # Если имя изменилось
-            old_name = unit.name
-            unit.name = new_name
-            # Обновляем ключ в словаре
-            st.session_state['roster'][new_name] = st.session_state['roster'].pop(old_name)
-            # Обновляем селектор
-            st.rerun()
+        unit.name = st.text_input("Имя", unit.name)
+        c_l, c_r = st.columns(2)
+        unit.level = c_l.number_input("Ур.", 1, 90, unit.level)
+        unit.rank = c_r.number_input("Ранг", 1, 12, unit.rank)
 
-        unit.level = c_lvl.number_input("Level", 1, 100, unit.level)
-        unit.rank = c_rank.number_input("Rank (Grade)", 1, 12, unit.rank)
+        st.caption("Базовый Интеллект")
+        unit.base_intellect = st.number_input("Int Base", 1, 30, unit.base_intellect, label_visibility="collapsed")
+        st.info(f"Интеллект: **{unit.base_intellect + (unit.attributes['wisdom'] // 3)}**\n(Base + Wis/3)")
 
-    # --- 3. ЖИЗНЕННЫЕ ПОКАЗАТЕЛИ (Vitals) ---
-    st.subheader("Vital Statistics")
-    with st.container(border=True):
-        st.markdown(f"**❤️ Health: {unit.max_hp}**")
-        with st.expander("HP Details", expanded=False):
-            c1, c2, c3 = st.columns(3)
-            unit.base_hp = c1.number_input("Base HP", 0, 500, unit.base_hp)
-            unit.max_hp = c2.number_input("Total HP (Override)", 1, 1000, unit.max_hp)
-            unit.current_hp = c3.number_input("Current HP", 0, unit.max_hp, unit.current_hp)
+    # --- ПРАВАЯ (СТАТЫ) ---
+    with col_r:
+        # 1. ТЕКУЩИЕ ПОКАЗАТЕЛИ И ИМПЛАНТЫ
+        with st.container(border=True):
+            with st.expander("⚙️ Импланты и Таланты (%)"):
+                pc1, pc2, pc3, pc4 = st.columns(4)
+                unit.implants_hp_pct = pc1.number_input("HP Импл %", 0, 200, unit.implants_hp_pct)
+                unit.implants_sp_pct = pc2.number_input("SP Импл %", 0, 200, unit.implants_sp_pct)
+                unit.talents_hp_pct = pc3.number_input("HP Талант %", 0, 200, unit.talents_hp_pct)
+                unit.talents_sp_pct = pc4.number_input("SP Талант %", 0, 200, unit.talents_sp_pct)
 
-        st.markdown(f"**🧠 Sanity (SP): {unit.max_sp}**")
-        with st.expander("SP Details", expanded=False):
-            c1, c2, c3 = st.columns(3)
-            unit.base_sp = c1.number_input("Base SP", 0, 500, unit.base_sp)
-            unit.max_sp = c2.number_input("Total SP", 1, 500, unit.max_sp)
-            unit.current_sp = c3.number_input("Current SP", -45, unit.max_sp, unit.current_sp)
+            sc1, sc2, sc3, sc4 = st.columns(4)
+            sc1.markdown(f"**HP** (Max {unit.max_hp})");
+            unit.current_hp = sc1.number_input("hp", 0, 9999, unit.current_hp, label_visibility="collapsed")
+            sc2.markdown(f"**SP** (Max {unit.max_sp})");
+            unit.current_sp = sc2.number_input("sp", -45, 9999, unit.current_sp, label_visibility="collapsed")
+            sc3.markdown(f"**Stagger** (Max {unit.max_stagger})");
+            unit.current_stagger = sc3.number_input("stg", 0, 9999, unit.current_stagger, label_visibility="collapsed")
+            sc4.markdown(f"**Скорость** ({unit.speed_dice_count}🎲)");
+            sc4.write(f"{unit.speed_min} ~ {unit.speed_max}")
 
-        c_stag, c_spd = st.columns(2)
-        with c_stag:
-            unit.max_stagger = st.number_input("🛡️ Stagger Threshold", 1, 200, unit.max_stagger)
-            unit.current_stagger = st.number_input("Current Stagger", 0, unit.max_stagger, unit.current_stagger)
-        with c_spd:
-            st.write("🏃 Speed Range")
-            c_min, c_max = st.columns(2)
-            unit.base_speed_min = c_min.number_input("Min", 1, 20, unit.base_speed_min)
-            unit.base_speed_max = c_max.number_input("Max", 1, 20, unit.base_speed_max)
+        # 2. ОЧКИ И БРОСКИ
+        with st.container(border=True):
+            # Атрибуты: 24 на старте + (lvl-1) за ап
+            # Навыки: 36 на старте + (lvl-1)*2 за ап
 
-    # --- 4. БРОНЯ ---
-    st.subheader("Defense")
-    with st.container(border=True):
-        c_arm, c_res = st.columns([1, 2])
-        with c_arm:
-            unit.armor_name = st.text_input("Armor Name", unit.armor_name)
-            unit.armor_type = st.selectbox("Armor Type", ["Light", "Medium", "Heavy"],
-                                           index=["Light", "Medium", "Heavy"].index(
-                                               unit.armor_type) if unit.armor_type in ["Light", "Medium",
-                                                                                       "Heavy"] else 1)
-        with c_res:
-            r1, r2, r3 = st.columns(3)
-            unit.hp_resists.slash = r1.number_input("Slash", 0.1, 2.0, unit.hp_resists.slash, 0.1)
-            unit.hp_resists.pierce = r2.number_input("Pierce", 0.1, 2.0, unit.hp_resists.pierce, 0.1)
-            unit.hp_resists.blunt = r3.number_input("Blunt", 0.1, 2.0, unit.hp_resists.blunt, 0.1)
+            lvl_growth = max(0, unit.level - 1)
+            total_attr_points = 25 + lvl_growth
+            total_skill_points = 38 + (lvl_growth * 2)
+            total_talent_points = unit.level // 3
 
-    # --- 5. АТРИБУТЫ ---
-    st.header("📊 Attributes")
-    with st.container(border=True):
-        cols = st.columns(5)
-        keys = ["strength", "endurance", "agility", "wisdom", "psych"]
-        for i, k in enumerate(keys):
-            unit.attributes[k] = cols[i].number_input(k.capitalize(), 1, 30, unit.attributes.get(k, 1))
+            spent_a = sum(unit.attributes.values())
+            spent_s = sum(unit.skills.values())
+            spent_t = len(unit.talents)
 
-    # --- 6. НАВЫКИ ---
-    st.header("🛠️ Skills")
-    t1, t2, t3 = st.tabs(["Combat", "Weapons", "Misc"])
+            c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
+            c1.metric("Хар-ки", total_attr_points - spent_a)
+            c2.metric("Навыки", total_skill_points - spent_s)
+            c3.metric("Таланты", total_talent_points - spent_t)
 
-    with t1:
-        c1, c2 = st.columns(2)
-        with c1:
-            unit.skills["strike_power"] = st.number_input("Strike Power", 0, 15, unit.skills.get("strike_power", 0))
-            unit.skills["medicine"] = st.number_input("Medicine", 0, 30, unit.skills.get("medicine", 0))
-            unit.skills["willpower"] = st.number_input("Willpower", 0, 30, unit.skills.get("willpower", 0))
-            unit.skills["luck"] = st.number_input("Luck", 0, 100, unit.skills.get("luck", 0))
-        with c2:
-            unit.skills["acrobatics"] = st.number_input("Acrobatics", 0, 15, unit.skills.get("acrobatics", 0))
-            unit.skills["shields"] = st.number_input("Shields", 0, 15, unit.skills.get("shields", 0))
-            unit.skills["tough_skin"] = st.number_input("Tough Skin", 0, 15, unit.skills.get("tough_skin", 0))
-            unit.skills["speed"] = st.number_input("Speed Skill", 0, 30, unit.skills.get("speed", 0))
+            missing = [i for i in range(3, unit.level + 1, 3) if str(i) not in unit.level_rolls]
+            if missing and c4.button(f"🎲 Бросок d5 ({missing[0]}..)"):
+                for l in missing: unit.level_rolls[str(l)] = {"hp": random.randint(1, 5), "sp": random.randint(1, 5)}
+                UnitLibrary.save_unit(unit);
+                st.rerun()
 
-    with t2:
-        c1, c2 = st.columns(2)
-        with c1:
-            unit.skills["light_weapon"] = st.number_input("Light Wep", 0, 15, unit.skills.get("light_weapon", 0))
-            unit.skills["medium_weapon"] = st.number_input("Medium Wep", 0, 15, unit.skills.get("medium_weapon", 0))
-        with c2:
-            unit.skills["heavy_weapon"] = st.number_input("Heavy Wep", 0, 15, unit.skills.get("heavy_weapon", 0))
-            unit.skills["firearms"] = st.number_input("Firearms", 0, 15, unit.skills.get("firearms", 0))
+        # 3. ХАРАКТЕРИСТИКИ
+        st.caption("Характеристики")
+        acols = st.columns(5)
+        for i, k in enumerate(["strength", "endurance", "agility", "wisdom", "psych"]):
+            unit.attributes[k] = acols[i].number_input(ATTR_LABELS[k], 0, 30, unit.attributes[k])
 
-    with t3:
-        c1, c2 = st.columns(2)
-        with c1:
-            unit.skills["eloquence"] = st.number_input("Eloquence", 0, 15, unit.skills.get("eloquence", 0))
-            unit.skills["forging"] = st.number_input("Forging", 0, 15, unit.skills.get("forging", 0))
-        with c2:
-            unit.skills["engineering"] = st.number_input("Engineering", 0, 25, unit.skills.get("engineering", 0))
-            unit.skills["programming"] = st.number_input("Programming", 0, 15, unit.skills.get("programming", 0))
+        # 4. НАВЫКИ
+        st.caption("Навыки")
+        with st.expander("Список навыков", expanded=True):
+            scols = st.columns(3)
+            for i, k in enumerate(SKILL_LABELS.keys()):
+                unit.skills[k] = scols[i % 3].number_input(SKILL_LABELS[k], 0, 30, unit.skills[k])
 
-    # --- 7. ПАССИВКИ ---
-    st.subheader("Passives & Talents")
-    col_p, col_t = st.columns(2)
-    with col_p:
-        st.caption("Passives IDs")
-        pas_str = st.text_area("CSV", ", ".join(unit.passives), key="p_edit")
-        if pas_str: unit.passives = [x.strip() for x in pas_str.split(",") if x.strip()]
-    with col_t:
-        st.caption("Talents IDs")
-        tal_str = st.text_area("CSV", ", ".join(unit.talents), key="t_edit")
-        if tal_str: unit.talents = [x.strip() for x in tal_str.split(",") if x.strip()]
+    # --- ПЕРЕСЧЕТ ---
+    logs = unit.recalculate_stats()
+
+    st.markdown("---")
+    with st.expander("📜 Подробный лог бонусов", expanded=False):
+        if logs:
+            for l in logs:
+                st.write(f"• {l}")
+        else:
+            st.caption("Нет активных бонусов.")
+
+    with st.expander("Дополнительно (Пассивки)"):
+        unit.passives = [x.strip() for x in st.text_area("ID Пассивок", ", ".join(unit.passives)).split(",") if
+                         x.strip()]
