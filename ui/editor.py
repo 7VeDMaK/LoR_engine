@@ -10,42 +10,61 @@ def render_editor_page():
     # --- 1. Основные параметры (Компактно) ---
     with st.container(border=True):
         c1, c2, c3 = st.columns([3, 1, 1])
-        name = c1.text_input("Name", "Слежка", label_visibility="collapsed", placeholder="Card Name")
+        name = c1.text_input("Name", "Time Bomb", label_visibility="collapsed", placeholder="Card Name")
         tier = c2.selectbox("Tier", [1, 2, 3], label_visibility="collapsed")
         ctype = c3.selectbox("Type", ["melee", "ranged"], label_visibility="collapsed")
 
-        desc = st.text_area("Description", "При Использовании: восстанавливает 1 HP", height=68,
+        desc = st.text_area("Description", "On Hit: Apply 5 Burn in 2 turns", height=68,
                             placeholder="Description text...")
 
     # --- 2. Эффекты Карты (Card Scripts) ---
-    # Здесь мы добавляем эффект "On Use -> Heal"
     card_scripts = {}
     with st.expander("✨ Card Effects (On Use / Passive)", expanded=False):
-        ce_col1, ce_col2, ce_col3 = st.columns([1, 1, 1])
+        ce_col1, ce_col2 = st.columns([1, 1])
         ce_trigger = ce_col1.selectbox("Trigger", ["on_use", "on_combat_end"], key="ce_trig")
         ce_type = ce_col2.selectbox("Effect", ["None", "Heal HP", "Apply Status"], key="ce_type")
 
-        ce_val = 0
-        ce_stat = ""
+        # Параметры эффекта
+        if ce_type != "None":
+            st.caption("Effect Parameters")
+            p1, p2, p3 = st.columns(3)
 
-        if ce_type == "Heal HP":
-            ce_val = ce_col3.number_input("Amount", 1, 20, 1, key="ce_val_hp")
-            if ce_type != "None":
-                card_scripts[ce_trigger] = [{
+            script_payload = {}
+
+            if ce_type == "Heal HP":
+                amt = p1.number_input("Amount", 1, 50, 5, key="ce_hp_amt")
+                script_payload = {
                     "script_id": "restore_hp",
-                    "params": {"amount": int(ce_val), "target": "self"}
-                }]
-        elif ce_type == "Apply Status":
-            # Упрощенно для примера
-            ce_stat = ce_col3.text_input("Status ID", "strength", key="ce_stat_id")
+                    "params": {"amount": int(amt), "target": "self"}
+                }
+
+            elif ce_type == "Apply Status":
+                s_name = p1.text_input("Status ID", "strength", key="ce_st_name")
+                s_amt = p2.number_input("Stack", 1, 20, 1, key="ce_st_amt")
+
+                # Добавляем Duration и Delay
+                s_dur = p3.number_input("Duration", 1, 5, 1, help="Сколько ходов длится", key="ce_st_dur")
+                s_del = st.number_input("Delay", 0, 5, 0, help="Через сколько ходов сработает", key="ce_st_del")
+
+                script_payload = {
+                    "script_id": "apply_status",
+                    "params": {
+                        "status": s_name,
+                        "stack": int(s_amt),
+                        "duration": int(s_dur),
+                        "delay": int(s_del),
+                        "target": "self"  # Обычно баффы карты вешаются на себя
+                    }
+                }
+
+            if script_payload:
+                card_scripts[ce_trigger] = [script_payload]
 
     # --- 3. Кубики (Grid Layout) ---
     st.markdown("**Dice Configuration**")
     num_dice = st.slider("Dice Count", 1, 4, 1, label_visibility="collapsed")
 
     dice_data = []
-
-    # Используем колонки для отображения кубиков в ряд
     cols = st.columns(num_dice)
 
     for i in range(num_dice):
@@ -56,23 +75,41 @@ def render_editor_page():
                 dtype_str = dc1.selectbox("Type", ["Slash", "Pierce", "Blunt", "Block", "Evade"], key=f"d_t_{i}",
                                           label_visibility="collapsed")
 
-                # Мин-Макс в одну строку
+                # Мин-Макс
                 mm_c1, mm_c2 = st.columns(2)
-                d_min = mm_c1.number_input("Min", 1, 50, 1, key=f"d_min_{i}")
-                d_max = mm_c2.number_input("Max", 1, 50, 4, key=f"d_max_{i}")
+                d_min = mm_c1.number_input("Min", 1, 50, 2, key=f"d_min_{i}")
+                d_max = mm_c2.number_input("Max", 1, 50, 5, key=f"d_max_{i}")
 
-                # Скрипты кубика (спрятаны в toggle/expander, чтобы не занимать место)
-                with st.popover("Effects"):
-                    eff_name = st.selectbox("Status", ["None", "bleed", "paralysis", "burn"], key=f"de_n_{i}")
-                    eff_amt = st.number_input("Amt", 1, 10, 1, key=f"de_a_{i}")
-                    eff_trig = st.selectbox("When", ["on_hit", "on_clash_win"], key=f"de_t_{i}")
+                # --- POPUP с эффектами кубика ---
+                with st.popover("✨ Effects"):
+                    st.markdown("Configure Status")
+
+                    # 1. Что и сколько
+                    e1, e2 = st.columns(2)
+                    eff_name = e1.selectbox("Status", ["None", "bleed", "paralysis", "burn", "strength"],
+                                            key=f"de_n_{i}")
+                    eff_amt = e2.number_input("Amt", 1, 20, 1, key=f"de_a_{i}")
+
+                    # 2. Тайминги (Duration / Delay)
+                    t1, t2 = st.columns(2)
+                    eff_dur = t1.number_input("Dur", 1, 5, 1, help="Длительность (ходов)", key=f"de_dur_{i}")
+                    eff_del = t2.number_input("Delay", 0, 5, 0, help="Задержка (ходов)", key=f"de_del_{i}")
+
+                    # 3. Триггер
+                    eff_trig = st.selectbox("Trigger", ["on_hit", "on_clash_win"], key=f"de_t_{i}")
 
                 # Сборка скриптов кубика
                 d_scripts = {}
                 if eff_name != "None":
                     d_scripts[eff_trig] = [{
                         "script_id": "apply_status",
-                        "params": {"status": eff_name, "stack": int(eff_amt), "target": "target"}
+                        "params": {
+                            "status": eff_name,
+                            "stack": int(eff_amt),
+                            "duration": int(eff_dur),
+                            "delay": int(eff_del),
+                            "target": "target"
+                        }
                     }]
 
                 # Конвертация типа

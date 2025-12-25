@@ -1,5 +1,6 @@
 import streamlit as st
 import sys
+import random
 from io import StringIO
 from contextlib import contextmanager
 
@@ -8,9 +9,10 @@ from logic.clash import ClashSystem
 from logic.statuses import StatusManager
 from ui.components import render_unit_stats, render_resist_inputs, card_selector_ui, render_card_visual
 
+
 @contextmanager
 def capture_output():
-    """Перехватывает print() из скриптов"""
+    """Перехватывает print() из скриптов для отображения в UI"""
     new_out = StringIO()
     old_out = sys.stdout
     try:
@@ -24,29 +26,28 @@ def run_combat():
     p1 = st.session_state['attacker']
     p2 = st.session_state['defender']
 
+    # --- ФАЗА: ПРОВЕРКА СОСТОЯНИЯ ---
     p1_stag = p1.is_staggered()
     p2_stag = p2.is_staggered()
 
     real_card_1 = p1.current_card
     real_card_2 = p2.current_card
 
+    # Если оглушен - карта меняется на заглушку
     if p1_stag: p1.current_card = Card(name="Stunned", dice_list=[])
     if p2_stag: p2.current_card = Card(name="Stunned", dice_list=[])
 
     sys_clash = ClashSystem()
 
-    # === ВРЕМЕННЫЙ РАСЧЕТ СКОРОСТИ В UI (ПОКА НЕТ БОЕВОЙ СИСТЕМЫ) ===
-    import random
-
-    # Это та же логика, что была в clash.py, но теперь она живет "снаружи" движка
+    # === ВРЕМЕННЫЙ РАСЧЕТ СКОРОСТИ В UI ===
+    # (Пока нет полноценного BattleManager, считаем тут)
     sp1 = random.randint(1, 6) + p1.get_status("haste") - p1.get_status("slow")
     sp2 = random.randint(1, 6) + p2.get_status("haste") - p2.get_status("slow")
-    diff = max(1, sp1) - max(1, sp2)  # (sp1 - sp2)
+    diff = max(1, sp1) - max(1, sp2)
 
     adv_p1 = "normal"
     adv_p2 = "normal"
 
-    # Твоя логика порогов
     if diff >= 8:
         adv_p2 = "impossible"
     elif diff >= 4:
@@ -55,15 +56,17 @@ def run_combat():
         adv_p1 = "impossible"
     elif diff <= -4:
         adv_p1 = "disadvantage"
-    # ================================================================
+    # ======================================
 
     with capture_output() as captured:
-        # Передаем рассчитанные преимущества
+        # Запускаем основной цикл боя
         logs = sys_clash.resolve_card_clash(p1, p2, adv_p1, adv_p2)
 
+    # Сохраняем логи
     st.session_state['battle_logs'] = logs
     st.session_state['script_logs'] = captured.getvalue()
 
+    # Сообщение о восстановлении от стаггера (для следующего хода)
     msg = []
     if p1_stag:
         p1.current_stagger = p1.max_stagger
@@ -74,16 +77,21 @@ def run_combat():
 
     st.session_state['turn_message'] = " ".join(msg)
 
+    # Возвращаем настоящие карты (если были оглушены)
     if p1_stag: p1.current_card = real_card_1
     if p2_stag: p2.current_card = real_card_2
 
+    # === КОНЕЦ ХОДА (Уменьшение длительности статусов) ===
     end_turn_logs_p1 = StatusManager.process_turn_end(p1)
     end_turn_logs_p2 = StatusManager.process_turn_end(p2)
 
     if end_turn_logs_p1:
-        st.session_state['battle_logs'].append({"round": "End", "rolls": "P1 Statuses", "details": ", ".join(end_turn_logs_p1)})
+        st.session_state['battle_logs'].append(
+            {"round": "End", "rolls": "P1 Statuses", "details": ", ".join(end_turn_logs_p1)})
     if end_turn_logs_p2:
-        st.session_state['battle_logs'].append({"round": "End", "rolls": "P2 Statuses", "details": ", ".join(end_turn_logs_p2)})
+        st.session_state['battle_logs'].append(
+            {"round": "End", "rolls": "P2 Statuses", "details": ", ".join(end_turn_logs_p2)})
+
 
 def reset_game():
     del st.session_state['attacker']
@@ -91,6 +99,7 @@ def reset_game():
     st.session_state['battle_logs'] = []
     st.session_state['script_logs'] = ""
     st.session_state['turn_message'] = ""
+
 
 def render_simulator_page():
     st.header("⚔️ Battle Simulator")
@@ -117,6 +126,7 @@ def render_simulator_page():
 
     st.divider()
 
+    # Кнопка запуска
     btn_col = st.columns([1, 2, 1])[1]
     with btn_col:
         label = "🔥 CLASH START 🔥"
@@ -124,13 +134,16 @@ def render_simulator_page():
             label = "⚔️ ONE-SIDED ATTACK"
         st.button(label, type="primary", on_click=run_combat, use_container_width=True)
 
+    # Отчет
     st.subheader("📜 Battle Report")
     if st.session_state['turn_message']:
         st.success(st.session_state['turn_message'])
 
     if st.session_state['script_logs']:
         with st.expander("🛠️ Script & Effect Logs (Debug)", expanded=True):
-            st.markdown(f"<div class='script-log'>{st.session_state['script_logs'].replace(chr(10), '<br>')}</div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='script-log'>{st.session_state['script_logs'].replace(chr(10), '<br>')}</div>",
+                unsafe_allow_html=True)
 
     if st.session_state['battle_logs']:
         for log in st.session_state['battle_logs']:
@@ -139,9 +152,17 @@ def render_simulator_page():
                 c1.markdown(f"**Round {log.get('round', '?')}**")
                 c1.code(log.get('rolls', '0 vs 0'))
                 det = log.get('details', '')
-                if "Win" in det: c3.write(f"⚔️ {det}")
-                elif "One-Sided" in det: c3.error(det)
-                elif "Stagger" in det: c3.warning(det)
-                else: c3.info(det)
 
-
+                # Подсветка разных типов событий
+                if "Win" in det:
+                    c3.write(f"⚔️ {det}")
+                elif "One-Sided" in det:
+                    c3.error(det)
+                elif "Stagger" in det:
+                    c3.warning(det)
+                elif "Start" in str(log.get('round')):  # Подсветка фазы старта
+                    c3.info(det)
+                elif "End" in str(log.get('round')):  # Подсветка фазы конца
+                    c3.caption(det)
+                else:
+                    c3.info(det)

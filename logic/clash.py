@@ -75,6 +75,9 @@ class ClashSystem:
             detail = ""
 
             # --- ФАЗА СРАВНЕНИЯ (CLASH PHASE) ---
+            # ... (начало цикла и фаза броска без изменений) ...
+
+            # --- ФАЗА СРАВНЕНИЯ (CLASH PHASE) ---
             if ctx_a and ctx_d:
                 if val_a > val_d:
                     detail = f"{attacker.name} Wins!"
@@ -98,6 +101,11 @@ class ClashSystem:
                 # Односторонняя атака
                 detail = "One-Sided Attack"
                 self._apply_damage(ctx_a, None)
+
+            elif ctx_d:
+                # Односторонняя атака (Защитник добивает)
+                detail = "One-Sided Attack"
+                self._apply_damage(ctx_d, None)
 
             # Запись логов статусов (собираем свежие логи из контекстов)
             round_logs = []
