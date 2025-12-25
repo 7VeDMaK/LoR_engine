@@ -2,19 +2,19 @@
 import streamlit as st
 import sys
 import random
+import os
 from io import StringIO
 from contextlib import contextmanager
 
 from core.models import Card
 from logic.clash import ClashSystem
 from logic.statuses import StatusManager
-from logic.passives import PASSIVE_REGISTRY  # <--- ВАЖНЫЙ ИМПОРТ
-from ui.components import render_unit_stats, render_resist_inputs, card_selector_ui, render_card_visual
+from logic.passives import PASSIVE_REGISTRY
+from ui.components import render_unit_stats, render_combat_info, card_selector_ui, render_card_visual
 
 
 @contextmanager
 def capture_output():
-    """Перехватывает print() из скриптов для отображения в UI"""
     new_out = StringIO()
     old_out = sys.stdout
     try:
@@ -40,9 +40,12 @@ def run_combat():
 
     sys_clash = ClashSystem()
 
-    # === ВРЕМЕННЫЙ РАСЧЕТ СКОРОСТИ ===
-    sp1 = random.randint(1, 6) + p1.get_status("haste") - p1.get_status("slow")
-    sp2 = random.randint(1, 6) + p2.get_status("haste") - p2.get_status("slow")
+    # === РАСЧЕТ СКОРОСТИ ===
+    p1_init_bonus = p1.modifiers.get("initiative", 0)
+    p2_init_bonus = p2.modifiers.get("initiative", 0)
+
+    sp1 = random.randint(1, 6) + p1.get_status("haste") - p1.get_status("slow") + p1_init_bonus
+    sp2 = random.randint(1, 6) + p2.get_status("haste") - p2.get_status("slow") + p2_init_bonus
     diff = max(1, sp1) - max(1, sp2)
 
     adv_p1 = "normal"
@@ -77,12 +80,10 @@ def run_combat():
     if p2_stag: p2.current_card = real_card_2
 
     # === КОНЕЦ ХОДА (Пассивки/Таланты) ===
-    # Сначала срабатывают таланты (например, начислить силу за потерянное ХП)
     def trigger_end_round_passives(unit):
         logs = []
         for pid in unit.passives + unit.talents:
             if pid in PASSIVE_REGISTRY:
-                # Передаем unit и функцию-логгер
                 PASSIVE_REGISTRY[pid].on_round_end(unit, lambda m: logs.append(m))
         return logs
 
@@ -96,9 +97,7 @@ def run_combat():
         st.session_state['battle_logs'].append(
             {"round": "End", "rolls": "P2 Talents", "details": ", ".join(pass_logs_p2)})
 
-    # === КОНЕЦ ХОДА (Уменьшение длительности статусов) ===
-    # Вызываем после талантов, чтобы только что полученные статусы (Delay=0, Dur=2)
-    # корректно уменьшили Duration на 1 и перешли в следующий ход.
+    # === КОНЕЦ ХОДА (Статусы) ===
     end_turn_logs_p1 = StatusManager.process_turn_end(p1)
     end_turn_logs_p2 = StatusManager.process_turn_end(p2)
 
@@ -111,33 +110,92 @@ def run_combat():
 
 
 def reset_game():
-    del st.session_state['attacker']
-    del st.session_state['defender']
+    """Сбрасывает логи и лечит персонажей"""
+    # 1. Лечим бойцов (Attacker и Defender)
+    for key in ['attacker', 'defender']:
+        if key in st.session_state:
+            u = st.session_state[key]
+            # Восстанавливаем статы до максимума
+            u.recalculate_stats()  # На всякий случай обновляем максы
+            u.current_hp = u.max_hp
+            u.current_stagger = u.max_stagger
+            u.current_sp = u.max_sp
+
+            # Очищаем статусы (кровотечение, силу и т.д.)
+            u._status_effects = {}
+            u.delayed_queue = []
+
+            # Очищаем память пассивок (чтобы забыть старый полученный урон и т.д.)
+            u.memory = {}
+
+    # 2. Чистим логи интерфейса
     st.session_state['battle_logs'] = []
     st.session_state['script_logs'] = ""
     st.session_state['turn_message'] = ""
 
 
 def render_simulator_page():
+    # --- CSS MAGIC ---
+    # 1. Уменьшаем отступ сверху (block-container)
+    # 2. Фиксируем картинки
+    st.markdown("""
+    <style>
+        .block-container {
+            padding-top: 1rem !important;
+            padding-bottom: 2rem !important;
+        }
+        h2 {
+            margin-top: 0 !important;
+            padding-top: 0 !important;
+            margin-bottom: 0.5rem !important;
+        }
+        [data-testid="stImage"] img {
+            max-height: 180px;
+            object-fit: cover;
+            border-radius: 12px;
+            width: 100%;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
     st.header("⚔️ Battle Simulator")
 
     with st.sidebar:
         st.divider()
-        st.button("🔄 Reset Battle", on_click=reset_game, type="secondary")
+        st.button("🔄 Reset Battle & Heal", on_click=reset_game, type="secondary", help="Full heal & clear logs")
 
-    col_left, col_right = st.columns(2)
+    col_left, col_right = st.columns(2, gap="large")
     p1 = st.session_state['attacker']
     p2 = st.session_state['defender']
 
+    p1.recalculate_stats()
+    p2.recalculate_stats()
+
+    # --- ЛЕВАЯ СТОРОНА (АТАКУЮЩИЙ) ---
     with col_left:
-        render_unit_stats(p1)
-        render_resist_inputs(p1, "p1")
+        c_avatar, c_stats = st.columns([1, 2])
+        with c_avatar:
+            img1 = p1.avatar if p1.avatar and os.path.exists(
+                p1.avatar) else "https://placehold.co/300x300/png?text=Unit+1"
+            st.image(img1, use_container_width=True)
+        with c_stats:
+            render_unit_stats(p1)
+
+        render_combat_info(p1)
         vis_card_1 = card_selector_ui(p1, "p1")
         render_card_visual(vis_card_1, p1.is_staggered())
 
+    # --- ПРАВАЯ СТОРОНА (ЗАЩИТНИК) ---
     with col_right:
-        render_unit_stats(p2)
-        render_resist_inputs(p2, "p2")
+        c_stats, c_avatar = st.columns([2, 1])
+        with c_stats:
+            render_unit_stats(p2)
+        with c_avatar:
+            img2 = p2.avatar if p2.avatar and os.path.exists(
+                p2.avatar) else "https://placehold.co/300x300/png?text=Unit+2"
+            st.image(img2, use_container_width=True)
+
+        render_combat_info(p2)
         vis_card_2 = card_selector_ui(p2, "p2")
         render_card_visual(vis_card_2, p2.is_staggered())
 

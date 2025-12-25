@@ -4,29 +4,23 @@ from core.library import Library
 from ui.styles import TYPE_ICONS, TYPE_COLORS
 
 
-# --- НОВАЯ ФУНКЦИЯ: ПЕРЕВОДЧИК СКРИПТОВ ---
+# --- ПЕРЕВОДЧИК СКРИПТОВ (Оставляем без изменений) ---
 def _format_script_text(script_id: str, params: dict) -> str:
-    """Превращает технический ID скрипта в красивый текст для игрока."""
-
     if script_id == "restore_hp":
         amt = params.get("amount", 0)
         return f"💚 Восстановить {amt} HP"
-
     elif script_id == "apply_status":
         status = params.get("status", "???").capitalize()
         stack = params.get("stack", 0)
         target = params.get("target", "target")
-        # Если цель "self" - добавляем пометку, иначе по умолчанию враг
         tgt_str = " (на себя)" if target == "self" else ""
         return f"🧪 Наложить {stack} {status}{tgt_str}"
-
-    # Если скрипт неизвестен, возвращаем как есть, но красивее
     return f"🔧 {script_id} {params}"
 
 
 def render_unit_stats(unit: Unit):
     icon = '🟦' if 'Roland' in unit.name else '🟥'
-    st.markdown(f"### {icon} {unit.name}")
+    st.markdown(f"### {icon} {unit.name} (Lvl {unit.level})")
 
     # HP
     max_hp = unit.max_hp if unit.max_hp > 0 else 1
@@ -67,19 +61,35 @@ def render_unit_stats(unit: Unit):
             idx += 1
 
 
-def render_resist_inputs(unit: Unit, key_prefix: str):
-    with st.expander(f"🛡️ Resistances"):
-        c1, c2 = st.columns(2)
-        with c1:
-            h_s = st.number_input("Sl", 0.1, 2.0, unit.hp_resists.slash, 0.1, key=f"{key_prefix}_hs")
-            h_p = st.number_input("Pi", 0.1, 2.0, unit.hp_resists.pierce, 0.1, key=f"{key_prefix}_hp")
-            h_b = st.number_input("Bl", 0.1, 2.0, unit.hp_resists.blunt, 0.1, key=f"{key_prefix}_hb")
-            unit.hp_resists = Resistances(h_s, h_p, h_b)
-        with c2:
-            s_s = st.number_input("Sl", 0.1, 2.0, unit.stagger_resists.slash, 0.1, key=f"{key_prefix}_ss")
-            s_p = st.number_input("Pi", 0.1, 2.0, unit.stagger_resists.pierce, 0.1, key=f"{key_prefix}_sp")
-            s_b = st.number_input("Bl", 0.1, 2.0, unit.stagger_resists.blunt, 0.1, key=f"{key_prefix}_sb")
-            unit.stagger_resists = Resistances(s_s, s_p, s_b)
+# === НОВАЯ ФУНКЦИЯ: ТОЛЬКО ОТОБРАЖЕНИЕ БОЕВЫХ ПАРАМЕТРОВ ===
+def render_combat_info(unit: Unit):
+    """Показывает резисты и бонусы от статов (Read-only)"""
+    with st.expander("🛡️ Resists & Bonuses", expanded=False):
+        # 1. Резисты (берем из профиля)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Slash", f"x{unit.hp_resists.slash}", help="Меньше = лучше")
+        c2.metric("Pierce", f"x{unit.hp_resists.pierce}")
+        c3.metric("Blunt", f"x{unit.hp_resists.blunt}")
+
+        st.divider()
+
+        # 2. Бонусы от статов (Strength, Agility, Skills)
+        # Мы предполагаем, что unit.recalculate_stats() был вызван перед этим
+        mods = unit.modifiers
+
+        # Считаем итоговые бонусы для UI
+        # Логика: База (Сила) + Оружие (Среднее)
+        atk_power = mods.get("power_attack", 0) + mods.get("power_medium", 0)
+        def_block = mods.get("power_block", 0)
+        def_evade = mods.get("power_evade", 0)
+        init_bonus = mods.get("initiative", 0)
+
+        b1, b2, b3 = st.columns(3)
+        b1.metric("⚔️ Atk Power", f"+{atk_power}", help="Strength + Medium Weapon Skill")
+        b2.metric("🛡️ Block", f"+{def_block}", help="Endurance + Shield Skill")
+        b3.metric("💨 Evade", f"+{def_evade}", help="Agility + Acrobatics")
+
+        st.caption(f"Init Bonus: +{init_bonus}")
 
 
 def card_selector_ui(unit: Unit, key_prefix: str):
@@ -92,16 +102,12 @@ def card_selector_ui(unit: Unit, key_prefix: str):
             st.error("Library empty!")
             return None
 
-        # --- ИЗМЕНЕНИЕ 1: ЧИСТЫЙ DROPDOWN ---
-        # Передаем список объектов Card напрямую.
-        # format_func=lambda x: x.name заставляет Streamlit показывать только имя.
         selected_card = st.selectbox(
             "Preset",
             all_cards_objs,
             format_func=lambda x: x.name,
             key=f"{key_prefix}_lib"
         )
-
         if selected_card.description:
             st.caption(f"📝 {selected_card.description}")
 
@@ -135,13 +141,11 @@ def render_card_visual(card: Card, is_staggered: bool = False):
             return
 
         type_icon = "🏹" if card.card_type == "ranged" else "⚔️"
-        st.markdown(f"**{card.name}** {type_icon}")  # Убрал скобку, выглядело странно
+        st.markdown(f"**{card.name}** {type_icon}")
 
-        # --- ИЗМЕНЕНИЕ 2: КРАСИВЫЕ ЭФФЕКТЫ ---
         if card.scripts:
-            # Отображаем эффекты карты (On Use и т.д.)
             for trig, scripts in card.scripts.items():
-                trigger_name = trig.replace("_", " ").title()  # on_use -> On Use
+                trigger_name = trig.replace("_", " ").title()
                 st.markdown(f"**{trigger_name}:**")
                 for s in scripts:
                     friendly_text = _format_script_text(s['script_id'], s.get('params', {}))
@@ -156,7 +160,6 @@ def render_card_visual(card: Card, is_staggered: bool = False):
                 icon = TYPE_ICONS.get(dice.dtype, "?")
                 st.markdown(f":{color}[{icon} **{dice.min_val}-{dice.max_val}**]")
 
-                # Эффекты на кубиках тоже переводим
                 if dice.scripts:
                     for trig, effs in dice.scripts.items():
                         for e in effs:

@@ -3,6 +3,8 @@ import random
 import os
 from core.models import Unit
 from core.unit_library import UnitLibrary
+# Импортируем реестр, чтобы видеть реальные описания из logic/passives.py
+from logic.passives import PASSIVE_REGISTRY
 
 ATTR_LABELS = {"strength": "Сила", "endurance": "Стойкость", "agility": "Ловкость", "wisdom": "Мудрость",
                "psych": "Психика"}
@@ -63,15 +65,14 @@ def render_profile_page():
         unit.base_intellect = st.number_input("Int Base", 1, 30, unit.base_intellect, label_visibility="collapsed")
         st.info(f"Интеллект: **{unit.base_intellect + (unit.attributes['wisdom'] // 3)}**")
 
+        # === ВЕРНУЛ СКОРОСТНЫЕ КУБИКИ ===
         st.divider()
         st.markdown(f"**🧊 Скорость:**")
-        # Отображаем индивидуально рассчитанные кубики
         if unit.computed_speed_dice:
             for d in unit.computed_speed_dice:
                 st.markdown(f"🧊 {d[0]}~{d[1]}")
         else:
-            # Фолбек для 0 уровня
-            st.markdown(f"🧊 {unit.speed_min}~{unit.speed_max}")
+            st.markdown(f"🧊 {unit.base_speed_min}~{unit.base_speed_max}")
 
     # --- ПРАВАЯ КОЛОНКА ---
     with col_r:
@@ -86,7 +87,7 @@ def render_profile_page():
             unit.talents_sp_pct = pc2.number_input("SP Талант %", 0, 200, unit.talents_sp_pct)
 
             c2.markdown("**Броня и Резисты**")
-            unit.armor_name = c2.text_input("Название Брони", unit.armor_name)
+            unit.armor_name = c2.text_input("Название Брони", unit.armor_name, placeholder="None для работы пассивки")
             r1, r2, r3 = c2.columns(3)
             unit.hp_resists.slash = r1.number_input("Slash", 0.1, 2.0, unit.hp_resists.slash)
             unit.hp_resists.pierce = r2.number_input("Pierce", 0.1, 2.0, unit.hp_resists.pierce)
@@ -116,7 +117,7 @@ def render_profile_page():
             c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
             c1.metric("Хар-ки", total_attr - spent_a)
             c2.metric("Навыки", total_skill - spent_s)
-            c3.metric("Таланты", total_tal - spent_t)
+            c3.metric("Таланты (pts)", total_tal - spent_t)
 
             with st.expander("🎲 История Бросков HP/SP"):
                 missing = [i for i in range(3, unit.level + 1, 3) if str(i) not in unit.level_rolls]
@@ -139,6 +140,7 @@ def render_profile_page():
         for i, k in enumerate(["strength", "endurance", "agility", "wisdom", "psych"]):
             unit.attributes[k] = acols[i].number_input(ATTR_LABELS[k], 0, 30, unit.attributes[k])
 
+        # === ВЕРНУЛ СПИСОК НАВЫКОВ ===
         st.caption("Навыки")
         with st.expander("Список навыков", expanded=True):
             scols = st.columns(3)
@@ -148,6 +150,62 @@ def render_profile_page():
     logs = unit.recalculate_stats()
 
     st.markdown("---")
+
+    # === ВЫБОР ТАЛАНТОВ (НОВАЯ ЛОГИКА) ===
+    st.subheader("🧬 Таланты и Способности")
+
+    # Функция для красивого отображения
+    def format_talent_name(tid):
+        if tid in PASSIVE_REGISTRY:
+            return PASSIVE_REGISTRY[tid].name
+        return tid
+
+    col_tal, col_info = st.columns([2, 1])
+
+    with col_tal:
+        total_tal = unit.level // 3
+        st.markdown(f"**Выберите Таланты** (Макс: {total_tal})")
+
+        registry_options = list(PASSIVE_REGISTRY.keys())
+        all_options = sorted(list(set(registry_options + unit.talents)))
+
+        selected = st.multiselect(
+            "Список талантов",
+            options=all_options,
+            default=unit.talents,
+            format_func=format_talent_name,
+            max_selections=total_tal,
+            label_visibility="collapsed"
+        )
+        unit.talents = selected
+
+        if len(unit.talents) < total_tal:
+            st.info(f"Можно выбрать еще {total_tal - len(unit.talents)}")
+        elif len(unit.talents) == total_tal and total_tal > 0:
+            st.success("Все очки талантов распределены")
+
+    with col_info:
+        st.markdown("**Описание:**")
+        if unit.talents:
+            for t_id in unit.talents:
+                if t_id in PASSIVE_REGISTRY:
+                    p_obj = PASSIVE_REGISTRY[t_id]
+                    with st.expander(f"ℹ️ {p_obj.name}"):
+                        st.write(p_obj.description)
+                else:
+                    st.caption(f"{t_id}: (Custom ID)")
+        else:
+            st.caption("Пусто")
+
+    # Ручное добавление
+    with st.expander("➕ Добавить ID вручную"):
+        new_id = st.text_input("ID").strip()
+        if st.button("Добавить") and new_id:
+            if new_id not in unit.talents:
+                unit.talents.append(new_id)
+                st.rerun()
+
+    # === ЛОГИ БОНУСОВ ===
     with st.expander("📜 Подробный лог бонусов", expanded=False):
         if logs:
             for l in logs:
@@ -166,7 +224,3 @@ def render_profile_page():
                 st.markdown(f":{color}[• {l}]")
         else:
             st.caption("Нет активных бонусов.")
-
-    with st.expander("Дополнительно (Пассивки)"):
-        unit.passives = [x.strip() for x in st.text_area("ID Пассивок", ", ".join(unit.passives)).split(",") if
-                         x.strip()]

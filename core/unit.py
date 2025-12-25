@@ -83,6 +83,9 @@ class Unit:
     modifiers: Dict[str, int] = field(default_factory=dict)
     level_rolls: Dict[str, Dict[str, int]] = field(default_factory=dict)
 
+    # === ПАМЯТЬ ДЛЯ ПАССИВОК (НОВОЕ ПОЛЕ) ===
+    memory: Dict[str, Any] = field(default_factory=dict)
+
     def to_dict(self):
         return {
             "name": self.name, "level": self.level, "rank": self.rank, "avatar": self.avatar,
