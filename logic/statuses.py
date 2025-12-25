@@ -9,39 +9,52 @@ class StatusManager:
     def process_turn_end(unit: 'Unit') -> List[str]:
         logs = []
 
-        # 1. ОБРАБОТКА АКТИВНЫХ СТАТУСОВ (Duration)
-        current_statuses = list(unit.statuses.items())
-        for status_id, stack in current_statuses:
-            # Сначала эффекты (например, ожог)
-            if status_id in STATUS_REGISTRY:
+        # Работаем с копией ключей, т.к. словарь может меняться
+        active_ids = list(unit._status_effects.keys())
+
+        for status_id in active_ids:
+            instances = unit._status_effects[status_id]
+
+            # 1. Считаем общую сумму для эффектов (например, общий урон от Блида)
+            total_stack = sum(i["amount"] for i in instances)
+
+            # Вызываем логику статуса (Strength, Bleed и т.д.)
+            # Важно: сам статус теперь не управляет временем, это делает менеджер ниже
+            if status_id in STATUS_REGISTRY and total_stack > 0:
                 handler = STATUS_REGISTRY[status_id]
-                msgs = handler.on_turn_end(unit, stack)
+                msgs = handler.on_turn_end(unit, total_stack)
                 logs.extend(msgs)
 
-            # Потом уменьшаем длительность
-            # Если в durations нет записи, значит это "одноразовый" статус (1 ход)
-            current_dur = unit.durations.get(status_id, 1)
-            new_dur = current_dur - 1
+            # 2. Уменьшаем Duration каждого отдельного наложения
+            next_instances = []
+            expired_amount = 0
 
-            if new_dur <= 0:
-                unit.remove_status(status_id)  # Удаляем полностью
+            for item in instances:
+                item["duration"] -= 1
+                # Оставляем только те, у которых еще есть время
+                if item["duration"] > 0:
+                    next_instances.append(item)
+                else:
+                    expired_amount += item["amount"]
+
+            # 3. Обновляем список на юните
+            if next_instances:
+                unit._status_effects[status_id] = next_instances
             else:
-                unit.durations[status_id] = new_dur  # Сохраняем
+                del unit._status_effects[status_id]  # Статус полностью истек
+                # if expired_amount > 0:
+                #     logs.append(f"{status_id.capitalize()} expired")
 
-        # 2. ОБРАБОТКА ОТЛОЖЕННЫХ ЭФФЕКТОВ (Delay)
+        # --- Обработка Delayed (без изменений) ---
         if unit.delayed_queue:
-            remaining_queue = []
+            remaining = []
             for item in unit.delayed_queue:
                 item["delay"] -= 1
                 if item["delay"] <= 0:
-                    # Время пришло! Активируем.
-                    name = item["name"]
-                    amt = item["amount"]
-                    dur = item["duration"]
-                    unit.add_status(name, amt, duration=dur, delay=0)
-                    logs.append(f"⏰ Delayed Effect: {name.capitalize()} +{amt} activated!")
+                    unit.add_status(item["name"], item["amount"], duration=item["duration"])
+                    logs.append(f"⏰ {item['name'].capitalize()} activated!")
                 else:
-                    remaining_queue.append(item)
-            unit.delayed_queue = remaining_queue
+                    remaining.append(item)
+            unit.delayed_queue = remaining
 
         return logs

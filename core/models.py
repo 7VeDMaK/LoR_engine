@@ -1,4 +1,4 @@
-
+# core/models.py
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional, Dict, Any
@@ -102,18 +102,38 @@ class Unit:
     stagger_resists: 'Resistances' = field(default_factory=lambda: Resistances())
     current_card: Optional['Card'] = None
 
-    statuses: Dict[str, int] = field(default_factory=dict)
-    durations: Dict[str, int] = field(default_factory=dict)
+    # === СИСТЕМА СТАТУСОВ (НОВАЯ) ===
+    # { "strength": [ {"amount": 2, "duration": 2}, ... ] }
+    _status_effects: Dict[str, List[Dict]] = field(default_factory=dict)
+
+    # Очередь отложенных эффектов
     delayed_queue: List[dict] = field(default_factory=list)
 
+    # Ресурсы
+    resources: Dict[str, int] = field(default_factory=dict)
+
+    # Списки пассивок и талантов
     passives: List[str] = field(default_factory=list)
-    # Список ID талантов (строки)
     talents: List[str] = field(default_factory=list)
 
-    # Память для пассивок (например, { "grit_counter": 30 })
+    # === ИСПРАВЛЕНИЕ: ВЕРНУЛ ПОЛЕ MEMORY ===
+    # Используется пассивками для хранения промежуточных данных (счетчики ударов и т.д.)
     memory: Dict[str, Any] = field(default_factory=dict)
 
-    resources: Dict[str, int] = field(default_factory=dict)
+    @property
+    def statuses(self) -> Dict[str, int]:
+        """Сводка статусов для совместимости."""
+        summary = {}
+        for name, instances in self._status_effects.items():
+            total = sum(i["amount"] for i in instances)
+            if total > 0:
+                summary[name] = total
+        return summary
+
+    @property
+    def durations(self) -> Dict[str, int]:
+        """Заглушка."""
+        return {}
 
     def is_staggered(self):
         return self.current_stagger <= 0
@@ -122,12 +142,8 @@ class Unit:
         return self.current_hp <= 0
 
     def add_status(self, name: str, amount: int, duration: int = 1, delay: int = 0):
-        """
-        Добавляет статус.
-        :param duration: Сколько ходов длится эффект (по умолчанию 1).
-        :param delay: Через сколько ходов активируется (0 = сразу).
-        """
-        
+        if amount <= 0: return
+
         if delay > 0:
             self.delayed_queue.append({
                 "name": name,
@@ -137,33 +153,56 @@ class Unit:
             })
             return
 
-        
-        if name not in self.statuses:
-            self.statuses[name] = 0
-        self.statuses[name] += amount
+        if name not in self._status_effects:
+            self._status_effects[name] = []
 
-        
-        if name == "charge" and self.statuses[name] > 20: self.statuses[name] = 20
-        if name == "poise" and self.statuses[name] > 99: self.statuses[name] = 99
+        # Лимиты
+        current_total = self.get_status(name)
+        if name == "charge" and (current_total + amount) > 20:
+            amount = max(0, 20 - current_total)
+        if name == "poise" and (current_total + amount) > 99:
+            amount = max(0, 99 - current_total)
 
-        
-        current_dur = self.durations.get(name, 0)
-        self.durations[name] = max(current_dur, duration)
+        if amount > 0:
+            self._status_effects[name].append({
+                "amount": amount,
+                "duration": duration
+            })
 
     def get_status(self, name: str) -> int:
-        return self.statuses.get(name, 0)
+        if name not in self._status_effects:
+            return 0
+        return sum(i["amount"] for i in self._status_effects[name])
 
     def remove_status(self, name: str, amount: int = None):
-        """Удаляет стаки. Если 0 - удаляет статус целиком."""
-        if name in self.statuses:
-            if amount is None:
-                del self.statuses[name]
-                if name in self.durations: del self.durations[name]
+        if name not in self._status_effects:
+            return
+
+        if amount is None:
+            del self._status_effects[name]
+            return
+
+        items = sorted(self._status_effects[name], key=lambda x: x["duration"])
+
+        remaining_to_remove = amount
+        new_items = []
+
+        for item in items:
+            if remaining_to_remove <= 0:
+                new_items.append(item)
+                continue
+
+            if item["amount"] > remaining_to_remove:
+                item["amount"] -= remaining_to_remove
+                remaining_to_remove = 0
+                new_items.append(item)
             else:
-                self.statuses[name] = max(0, self.statuses[name] - amount)
-                if self.statuses[name] == 0:
-                    del self.statuses[name]
-                    if name in self.durations: del self.durations[name]
+                remaining_to_remove -= item["amount"]
+
+        if not new_items:
+            del self._status_effects[name]
+        else:
+            self._status_effects[name] = new_items
 
     def heal_hp(self, amount: int):
         deep_wound = self.get_status("deep_wound")
