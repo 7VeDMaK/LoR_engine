@@ -116,9 +116,15 @@ class PassiveDaughterOfBackstreets(BasePassive):
         if log_func:
             log_func(f"🏙️ **{self.name}**: Реген (+1 HP, +1 SP, +1 Stagger)")
 
+class PassiveHedonism(BasePassive):
+    id = "hedonism"
+    name = "Гедонизм"
+    description = "Не позволяет сбрасывать ваши атаки при разнице скорости 8+. (Но вы все равно деретесь с Помехой)."
+
 
 # === РЕГИСТРАЦИЯ ===
 PASSIVE_REGISTRY = {
+    "hedonism": PassiveHedonism(),
     "wag_tail": PassiveWagTail(),
     "backstreet_demon": PassiveBackstreetDemon(),
     "daughter_of_backstreets": PassiveDaughterOfBackstreets(),

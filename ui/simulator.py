@@ -43,10 +43,14 @@ def roll_phase():
                 'card': None,
                 'target_slot': -1,
                 'is_aggro': False,
+                'force_clash': False,  # <--- Добавлен флаг (Гедонизм/Принудительный бой)
                 'stunned': True
             }]
         else:
             unit.roll_speed_dice()
+            # Инициализируем флаг для всех новых слотов
+            for s in unit.active_slots:
+                s['force_clash'] = False
 
     process_roll(p1)
     process_roll(p2)
@@ -175,19 +179,14 @@ def render_slot_strip(unit: Unit, opponent: Unit, slot_idx: int, key_prefix: str
             st.caption("Персонаж оглушен и пропустит этот ход.")
         return
 
-    # --- АВТО-ВЫБОР КАРТЫ (FIX) ---
-    # Если карта не выбрана (None), но есть доступные карты,
-    # мы принудительно ставим первую, чтобы UI не обманывал пользователя.
+    # --- АВТО-ВЫБОР КАРТЫ ---
     all_cards = Library.get_all_cards()
     if slot.get('card') is None and all_cards:
         slot['card'] = all_cards[0]
 
-    # Теперь selected_card всегда актуальна, даже при первом рендере
     selected_card = slot.get('card')
-
     speed = slot['speed']
     ui_stat = slot.get('ui_status', {"text": "...", "icon": "", "color": "gray"})
-
     card_name = f"🃏 {selected_card.name}" if selected_card else "⚠️ No Page"
 
     spd_label = f"🎲{speed}"
@@ -196,7 +195,8 @@ def render_slot_strip(unit: Unit, opponent: Unit, slot_idx: int, key_prefix: str
     label = f"S{slot_idx + 1} ({spd_label}) | {ui_stat['icon']} {ui_stat['text']} | {card_name}"
 
     with st.expander(label, expanded=False):
-        c_tgt, c_sel, c_aggro = st.columns([1.5, 2, 0.5])
+        # ИЗМЕНЕНИЕ: 3 колонки (Цель, Карта, Опции)
+        c_tgt, c_sel, c_opts = st.columns([1.5, 2, 1.2])
 
         # --- TARGET SELECTOR ---
         target_options = [-1]
@@ -236,17 +236,22 @@ def render_slot_strip(unit: Unit, opponent: Unit, slot_idx: int, key_prefix: str
             label_visibility="collapsed"
         )
 
-        # Обновляем карту по выбору (даже если он не изменился, это безопасно)
         if picked_card:
             slot['card'] = picked_card
-            # Обновляем локальную переменную для отрисовки кубиков ниже
             selected_card = picked_card
 
-        # --- AGGRO CHECKBOX ---
-        is_aggro = c_aggro.checkbox("✋", value=slot.get('is_aggro', False),
-                                    key=f"{key_prefix}_aggro_{slot_idx}",
-                                    help="Aggro")
-        slot['is_aggro'] = is_aggro
+        # --- OPTIONS (AGGRO & FORCE CLASH) ---
+        # Делим колонку опций на две маленькие
+        opt_c1, opt_c2 = c_opts.columns(2)
+
+        slot['is_aggro'] = opt_c1.checkbox("✋", value=slot.get('is_aggro', False),
+                                           key=f"{key_prefix}_aggro_{slot_idx}",
+                                           help="Aggro (Перехват)")
+
+        # Галочка "No Discard" (Замочек)
+        slot['force_clash'] = opt_c2.checkbox("🔒", value=slot.get('force_clash', False),
+                                              key=f"{key_prefix}_force_{slot_idx}",
+                                              help="No Discard: Не сбрасывать атаку, даже если я намного быстрее. (Принудительный клэш)")
 
         st.divider()
 
@@ -329,6 +334,8 @@ def render_simulator_page():
             width: 100%;
             max-height: 200px !important;
         }
+        /* Уменьшаем отступы в экспандерах */
+        .streamlit-expanderContent { padding-top: 5px !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -343,8 +350,6 @@ def render_simulator_page():
 
     p1.recalculate_stats()
     p2.recalculate_stats()
-
-    # УБРАН вызов sync_state_from_widgets, так как render_slot_strip теперь самодостаточен
 
     precalculate_interactions(p1, p2)
 
@@ -409,4 +414,5 @@ def render_simulator_page():
                 c1, c2, c3 = st.columns([1, 2, 4])
                 c1.markdown(f"**{log.get('round')}**")
                 c2.caption(log.get('rolls'))
-                c3.write(log.get('details'))
+                # Использование markdown позволяет отображать жирный шрифт и переносы строк в логах
+                c3.markdown(log.get('details'))

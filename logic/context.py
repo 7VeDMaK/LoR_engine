@@ -25,6 +25,8 @@ class RollContext:
     damage_multiplier: float = 1.0  # Множитель урона (по умолчанию x1.0)
     is_critical: bool = False  # Флаг, был ли крит
 
+    is_disadvantage: bool = False  # Бросок с помехой (кидаем 2, берем меньшее)
+
     def modify_power(self, amount: int, reason: str):
         """Изменяет значение кубика и записывает это в лог."""
         if amount == 0:

@@ -10,8 +10,7 @@ from logic.talents import TALENT_REGISTRY
 class ClashMechanicsMixin:
     """
     Уровень 1: Низкоуровневая механика.
-    Отвечает за броски, подсчет модификаторов и нанесение урона.
-    Теперь с подробными логами!
+    Содержит методы бросков (включая Помеху) и нанесения урона.
     """
 
     def _dispatch_event(self, event_name: str, context: RollContext, *args):
@@ -56,39 +55,40 @@ class ClashMechanicsMixin:
             params = script_data.get("params", {})
             if script_id in SCRIPTS_REGISTRY: SCRIPTS_REGISTRY[script_id](ctx, params)
 
-    def _create_roll_context(self, source, target, die: Dice) -> RollContext:
+    # === ВОТ ЭТОТ МЕТОД ВЫЗЫВАЕТ ОШИБКУ, ЕСЛИ ОН ОТСУТСТВУЕТ ===
+    def _create_roll_context(self, source, target, die: Dice, is_disadvantage: bool = False) -> RollContext:
         if not die: return None
-        roll = random.randint(die.min_val, die.max_val)
-        ctx = RollContext(source=source, target=target, dice=die, final_value=roll)
 
-        # Мы добавляем описание кубика в лог сразу, чтобы было понятно
-        ctx.log.append(f"🎲 Roll [{die.min_val}-{die.max_val}]: **{roll}**")
+        # Логика броска (Нормальный или с Помехой)
+        if is_disadvantage:
+            r1 = random.randint(die.min_val, die.max_val)
+            r2 = random.randint(die.min_val, die.max_val)
+            roll = min(r1, r2)
+            ctx = RollContext(source=source, target=target, dice=die, final_value=roll, is_disadvantage=True)
+            ctx.log.append(f"📉 **Помеха!** (Speed): {r1}, {r2} -> **{roll}**")
+        else:
+            roll = random.randint(die.min_val, die.max_val)
+            ctx = RollContext(source=source, target=target, dice=die, final_value=roll, is_disadvantage=False)
+            ctx.log.append(f"🎲 Roll [{die.min_val}-{die.max_val}]: **{roll}**")
 
-        # === ДЕТАЛИЗАЦИЯ БОНУСОВ ===
+        # Бонусы
         mods = source.modifiers
 
         if die.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]:
-            # Сила (Power Attack хранит бонус от силы)
-            str_bonus = mods.get("power_attack", 0)
-            if str_bonus: ctx.modify_power(str_bonus, "Сила")
-
-            # Навык оружия (Для простоты считаем Medium, в идеале брать тип карты)
-            skill_bonus = mods.get("power_medium", 0)
-            if skill_bonus: ctx.modify_power(skill_bonus, "Навык")
+            p_atk = mods.get("power_attack", 0)
+            if p_atk: ctx.modify_power(p_atk, "Сила")
+            p_skill = mods.get("power_medium", 0)
+            if p_skill: ctx.modify_power(p_skill, "Навык")
 
         elif die.dtype == DiceType.BLOCK:
-            # Стойкость + Щиты
-            blk_bonus = mods.get("power_block", 0)
-            if blk_bonus: ctx.modify_power(blk_bonus, "Стойкость/Щит")
+            p_blk = mods.get("power_block", 0)
+            if p_blk: ctx.modify_power(p_blk, "Стойкость")
 
         elif die.dtype == DiceType.EVADE:
-            # Ловкость + Акробатика
-            evd_bonus = mods.get("power_evade", 0)
-            if evd_bonus: ctx.modify_power(evd_bonus, "Ловк/Акробатика")
+            p_evd = mods.get("power_evade", 0)
+            if p_evd: ctx.modify_power(p_evd, "Ловкость")
 
-        # Вызываем события (статусы, пассивки могут добавить свои бонусы)
         self._dispatch_event("on_roll", ctx)
-
         return ctx
 
     def _handle_clash_win(self, ctx: RollContext):
@@ -98,23 +98,18 @@ class ClashMechanicsMixin:
         self._dispatch_event("on_clash_lose", ctx)
 
     def _trigger_unit_event(self, event_name, unit, *args):
-        # Версия без контекста броска
         for status_id, stack in list(unit.statuses.items()):
             if status_id in STATUS_REGISTRY:
                 handler = getattr(STATUS_REGISTRY[status_id], event_name, None)
                 if handler: handler(unit, *args)
-
         for pid in unit.passives:
             if pid in PASSIVE_REGISTRY:
                 handler = getattr(PASSIVE_REGISTRY[pid], event_name, None)
                 if handler: handler(unit, *args)
-
         for pid in unit.talents:
             if pid in TALENT_REGISTRY:
                 handler = getattr(TALENT_REGISTRY[pid], event_name, None)
                 if handler: handler(unit, *args)
-
-    # === УЛУЧШЕННЫЙ ЛОГ УРОНА ===
 
     def _deal_direct_damage(self, source_ctx: RollContext, target, amount: int, dmg_type: str):
         if amount <= 0: return
@@ -122,41 +117,30 @@ class ClashMechanicsMixin:
         if dmg_type == "hp":
             dtype_name = source_ctx.dice.dtype.value.lower()
             res = getattr(target.hp_resists, dtype_name, 1.0)
-
-            # Проверяем стаггер
             is_stag_hit = False
             if target.is_staggered():
                 res *= 2.0
                 is_stag_hit = True
 
             final_dmg = int(amount * res)
-
-            # Барьер
             barrier = target.get_status("barrier")
             if barrier > 0:
                 absorbed = min(barrier, final_dmg)
                 target.remove_status("barrier", absorbed)
                 final_dmg -= absorbed
-                source_ctx.log.append(f"🛡️ Барьер поглотил {absorbed} урона")
+                source_ctx.log.append(f"🛡️ Барьер поглотил {absorbed}")
 
             target.current_hp -= final_dmg
-
-            # ФОРМИРУЕМ ПОНЯТНЫЙ ЛОГ
-            msg = f"💥 **Попадание!** {target.name} получает **{final_dmg}** урона"
-            if res != 1.0:
-                msg += f" (Resist x{res:.1f})"
-            if is_stag_hit:
-                msg += " [STAGGER x2]"
-
+            msg = f"💥 **{final_dmg}** урона по {target.name}"
+            if is_stag_hit: msg += " (Stagger x2!)"
             source_ctx.log.append(msg)
 
         elif dmg_type == "stagger":
             dtype_name = source_ctx.dice.dtype.value.lower()
             res = getattr(target.stagger_resists, dtype_name, 1.0)
             final_dmg = int(amount * res)
-
             target.current_stagger -= final_dmg
-            source_ctx.log.append(f"😵 Урон по Stagger: **{final_dmg}** (по {target.name})")
+            source_ctx.log.append(f"😵 **{final_dmg}** Stagger урона по {target.name}")
 
     def _apply_damage(self, attacker_ctx: RollContext, defender_ctx: RollContext, dmg_type: str = "hp"):
         attacker = attacker_ctx.source
@@ -165,8 +149,6 @@ class ClashMechanicsMixin:
         self._dispatch_event("on_hit", attacker_ctx)
 
         raw_damage = attacker_ctx.final_value
-
-        # Собираем модификаторы для лога
         dmg_bonus = attacker.get_status("dmg_up") - attacker.get_status("dmg_down")
         dmg_bonus += attacker.modifiers.get("damage_deal", 0)
 
@@ -176,12 +158,9 @@ class ClashMechanicsMixin:
 
         total_amt = max(0, raw_damage + dmg_bonus + incoming_mod)
 
-        # Если были модификаторы урона, можно добавить инфо
-        # if dmg_bonus != 0: attacker_ctx.log.append(f"[Dmg Bonus: {dmg_bonus}]")
-
         if attacker_ctx.damage_multiplier != 1.0:
             total_amt = int(total_amt * attacker_ctx.damage_multiplier)
-            attacker_ctx.log.append(f"⚡ Крит множитель x{attacker_ctx.damage_multiplier}!")
+            attacker_ctx.log.append(f"⚡ Крит x{attacker_ctx.damage_multiplier}!")
 
         self._deal_direct_damage(attacker_ctx, defender, total_amt, dmg_type)
 

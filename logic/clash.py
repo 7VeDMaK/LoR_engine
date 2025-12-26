@@ -50,20 +50,16 @@ class ClashSystem(ClashFlowMixin):
         self.logs = []
         battle_report = []
 
-        # 1. Start
         self._trigger_unit_event("on_combat_start", p1, self.log)
         self._trigger_unit_event("on_combat_start", p2, self.log)
         if self.logs:
             battle_report.append({"round": "Start", "rolls": "Events", "details": " | ".join(self.logs)})
             self.logs = []
 
-        # 2. Redirects
         ClashSystem.calculate_redirections(p1, p2)
         ClashSystem.calculate_redirections(p2, p1)
 
-        # 3. Actions
         actions = []
-
         def add_actions(unit, opponent, is_p1_flag):
             for i, slot in enumerate(unit.active_slots):
                 if slot.get('card'):
@@ -71,42 +67,35 @@ class ClashSystem(ClashFlowMixin):
                     actions.append({
                         'unit': unit, 'opponent': opponent,
                         'slot_idx': i, 'slot_data': slot,
-                        'is_p1': is_p1_flag, 'score': score, 'speed': slot['speed']
+                        'is_p1': is_p1_flag, 'score': score
                     })
 
         add_actions(p1, p2, True)
         add_actions(p2, p1, False)
-
-        # Сортировка по скорости (Desc)
         actions.sort(key=lambda x: x['score'], reverse=True)
 
         executed_p1 = set()
         executed_p2 = set()
 
-        # 4. Loop
         for act in actions:
             u = act['unit']
             opp = act['opponent']
             idx = act['slot_idx']
             is_p1 = act['is_p1']
+            slot_data = act['slot_data'] # Наш слот
 
             if is_p1:
                 if idx in executed_p1: continue
             else:
                 if idx in executed_p2: continue
 
-            # Если юнит выбыл, он не начинает атаку
             if u.is_dead() or u.is_staggered(): continue
 
-            target_idx = act['slot_data'].get('target_slot', -1)
-            if target_idx == -1 or target_idx >= len(opp.active_slots):
-                continue
+            target_idx = slot_data.get('target_slot', -1)
+            if target_idx == -1 or target_idx >= len(opp.active_slots): continue
 
-            target_slot = opp.active_slots[target_idx]
+            target_slot = opp.active_slots[target_idx] # Слот врага
 
-            # Проверка Clash:
-            # 1. Оппонент свободен
-            # 2. Оппонент целится в нас
             opp_ready = False
             if is_p1:
                 if target_idx not in executed_p2: opp_ready = True
@@ -115,43 +104,35 @@ class ClashSystem(ClashFlowMixin):
 
             is_clash = (target_slot.get('target_slot') == idx) and opp_ready
 
-            u.current_card = act['slot_data']['card']
+            u.current_card = slot_data['card']
 
             if is_clash:
-                # CLASH
                 if is_p1:
-                    executed_p1.add(idx);
-                    executed_p2.add(target_idx)
+                    executed_p1.add(idx); executed_p2.add(target_idx)
                 else:
-                    executed_p2.add(idx);
-                    executed_p1.add(target_idx)
+                    executed_p2.add(idx); executed_p1.add(target_idx)
 
                 opp.current_card = target_slot['card']
 
                 if opp.is_staggered():
-                    # Враг в стаггере -> One Sided
                     logs = self._resolve_one_sided(u, opp, f"Hit (Stagger)")
                 else:
                     p1_idx = idx if is_p1 else target_idx
                     p2_idx = target_idx if is_p1 else idx
                     self.log(f"⚔️ Clash: P1[{p1_idx + 1}] vs P2[{p2_idx + 1}]")
 
-                    logs = self._resolve_card_clash(u, opp, f"Clash", is_p1_attacker=is_p1)
+                    # ПЕРЕДАЕМ ОБЪЕКТЫ СЛОТОВ ЦЕЛИКОМ (с флагами force_clash)
+                    logs = self._resolve_card_clash(u, opp, f"Clash", is_p1_attacker=is_p1, slot_a=slot_data, slot_d=target_slot)
 
                 battle_report.extend(logs)
-
             else:
-                # ONE-SIDED
-                if is_p1:
-                    executed_p1.add(idx)
-                else:
-                    executed_p2.add(idx)
+                if is_p1: executed_p1.add(idx)
+                else: executed_p2.add(idx)
 
                 p_label = "P1" if is_p1 else "P2"
                 logs = self._resolve_one_sided(u, opp, f"{p_label}[{idx + 1}]🏹Hit")
                 battle_report.extend(logs)
 
-        # 5. End
         self.logs = []
         self._trigger_unit_event("on_combat_end", p1, self.log)
         self._trigger_unit_event("on_combat_end", p2, self.log)
