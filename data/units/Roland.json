@@ -1,0 +1,183 @@
+{
+    "name": "Roland",
+    "level": 90,
+    "rank": 9,
+    "avatar": "data/avatars/Roland.jpg",
+    "base_intellect": 1,
+    "pct_mods": {
+        "imp_hp": 200,
+        "imp_sp": 0,
+        "tal_hp": 200,
+        "tal_sp": 0
+    },
+    "base_stats": {
+        "current_hp": 4275,
+        "current_sp": 267,
+        "current_stagger": 2122
+    },
+    "defense": {
+        "armor_name": "Standard Fixer Suit",
+        "armor_type": "Medium",
+        "hp_resists": {
+            "slash": 1.0,
+            "pierce": 1.0,
+            "blunt": 1.0
+        },
+        "stagger_resists": {
+            "slash": 1.0,
+            "pierce": 1.0,
+            "blunt": 1.0
+        }
+    },
+    "attributes": {
+        "strength": 0,
+        "endurance": 30,
+        "agility": 0,
+        "wisdom": 0,
+        "psych": 0
+    },
+    "skills": {
+        "strike_power": 0,
+        "medicine": 0,
+        "willpower": 0,
+        "luck": 0,
+        "acrobatics": 0,
+        "shields": 15,
+        "tough_skin": 30,
+        "speed": 15,
+        "light_weapon": 0,
+        "medium_weapon": 0,
+        "heavy_weapon": 0,
+        "firearms": 0,
+        "eloquence": 0,
+        "forging": 0,
+        "engineering": 0,
+        "programming": 0
+    },
+    "passives": [],
+    "talents": [],
+    "level_rolls": {
+        "3": {
+            "hp": 3,
+            "sp": 5
+        },
+        "6": {
+            "hp": 4,
+            "sp": 4
+        },
+        "9": {
+            "hp": 1,
+            "sp": 2
+        },
+        "12": {
+            "hp": 1,
+            "sp": 1
+        },
+        "15": {
+            "hp": 2,
+            "sp": 2
+        },
+        "18": {
+            "hp": 3,
+            "sp": 5
+        },
+        "21": {
+            "hp": 3,
+            "sp": 4
+        },
+        "24": {
+            "hp": 5,
+            "sp": 3
+        },
+        "27": {
+            "hp": 3,
+            "sp": 1
+        },
+        "30": {
+            "hp": 5,
+            "sp": 4
+        },
+        "33": {
+            "hp": 2,
+            "sp": 5
+        },
+        "36": {
+            "hp": 1,
+            "sp": 3
+        },
+        "39": {
+            "hp": 5,
+            "sp": 3
+        },
+        "42": {
+            "hp": 4,
+            "sp": 5
+        },
+        "45": {
+            "hp": 1,
+            "sp": 4
+        },
+        "48": {
+            "hp": 2,
+            "sp": 5
+        },
+        "51": {
+            "hp": 1,
+            "sp": 2
+        },
+        "54": {
+            "hp": 4,
+            "sp": 1
+        },
+        "57": {
+            "hp": 3,
+            "sp": 5
+        },
+        "60": {
+            "hp": 1,
+            "sp": 2
+        },
+        "63": {
+            "hp": 3,
+            "sp": 1
+        },
+        "66": {
+            "hp": 2,
+            "sp": 5
+        },
+        "69": {
+            "hp": 1,
+            "sp": 1
+        },
+        "72": {
+            "hp": 2,
+            "sp": 3
+        },
+        "75": {
+            "hp": 2,
+            "sp": 2
+        },
+        "78": {
+            "hp": 2,
+            "sp": 4
+        },
+        "81": {
+            "hp": 2,
+            "sp": 3
+        },
+        "84": {
+            "hp": 5,
+            "sp": 4
+        },
+        "87": {
+            "hp": 4,
+            "sp": 4
+        },
+        "90": {
+            "hp": 2,
+            "sp": 4
+        }
+    },
+    "cooldowns": {},
+    "active_buffs": {}
+}

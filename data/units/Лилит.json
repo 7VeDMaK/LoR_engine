@@ -1,0 +1,108 @@
+{
+    "name": "Лилит",
+    "level": 21,
+    "rank": 8,
+    "avatar": "data/avatars/Unit_2.png",
+    "base_intellect": 3,
+    "pct_mods": {
+        "imp_hp": 6,
+        "imp_sp": 0,
+        "tal_hp": 0,
+        "tal_sp": 0
+    },
+    "deck": [
+        "выпустить_пар_a717"
+    ],
+    "base_stats": {
+        "current_hp": 132,
+        "current_sp": 77,
+        "current_stagger": 66
+    },
+    "defense": {
+        "armor_name": "None",
+        "armor_type": "Medium",
+        "hp_resists": {
+            "slash": 1.0,
+            "pierce": 1.0,
+            "blunt": 1.0
+        },
+        "stagger_resists": {
+            "slash": 1.0,
+            "pierce": 1.0,
+            "blunt": 1.0
+        }
+    },
+    "attributes": {
+        "strength": 15,
+        "endurance": 15,
+        "agility": 15,
+        "wisdom": 0,
+        "psych": 0
+    },
+    "skills": {
+        "strike_power": 0,
+        "medicine": 0,
+        "willpower": 0,
+        "luck": 0,
+        "acrobatics": 15,
+        "shields": 0,
+        "tough_skin": 0,
+        "speed": 30,
+        "light_weapon": 3,
+        "medium_weapon": 15,
+        "heavy_weapon": 0,
+        "firearms": 0,
+        "eloquence": 15,
+        "forging": 0,
+        "engineering": 0,
+        "programming": 0
+    },
+    "passives": [
+        "backstreet_demon",
+        "daughter_of_backstreets",
+        "wag_tail",
+        "hedonism",
+        "blessing_of_wind",
+        "live_fast_die_young"
+    ],
+    "talents": [
+        "naked_defense",
+        "vengeful_payback",
+        "berserker_rage",
+        "calm_mind",
+        "hiding_in_smoke",
+        "smoke_universality"
+    ],
+    "level_rolls": {
+        "3": {
+            "hp": 2,
+            "sp": 4
+        },
+        "6": {
+            "hp": 1,
+            "sp": 3
+        },
+        "9": {
+            "hp": 1,
+            "sp": 2
+        },
+        "12": {
+            "hp": 2,
+            "sp": 3
+        },
+        "15": {
+            "hp": 5,
+            "sp": 4
+        },
+        "18": {
+            "hp": 4,
+            "sp": 5
+        },
+        "21": {
+            "hp": 1,
+            "sp": 1
+        }
+    },
+    "cooldowns": {},
+    "active_buffs": {}
+}
