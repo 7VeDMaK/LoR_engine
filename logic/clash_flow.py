@@ -4,10 +4,10 @@ from logic.clash_mechanics import ClashMechanicsMixin
 
 class ClashFlowMixin(ClashMechanicsMixin):
     """
-    Логика разрешения конкретных стычек (Flow):
-    - _resolve_card_clash (Полный цикл столкновения двух карт)
-    - _resolve_clash_interaction (Кто кого перебил и какой эффект)
-    - _resolve_one_sided (Односторонняя атака)
+    Уровень 2: Сценарии стычек.
+    - Полный цикл Clash
+    - Односторонняя атака
+    - Таблица взаимодействий кубиков (Interaction Table)
     """
 
     def _resolve_card_clash(self, attacker, defender, round_label: str, is_p1_attacker: bool):
@@ -21,10 +21,19 @@ class ClashFlowMixin(ClashMechanicsMixin):
         max_dice = max(len(ac.dice_list), len(dc.dice_list))
 
         for j in range(max_dice):
-            if attacker.is_dead() or defender.is_dead() or attacker.is_staggered(): break
+            # Проверяем стаггер/смерть ПЕРЕД каждым кубиком
+            atk_alive = not (attacker.is_dead() or attacker.is_staggered())
+            def_alive = not (defender.is_dead() or defender.is_staggered())
 
-            die_a = ac.dice_list[j] if j < len(ac.dice_list) else None
-            die_d = dc.dice_list[j] if j < len(dc.dice_list) else None
+            # Если оба выбыли - прерываем
+            if not atk_alive and not def_alive: break
+
+            # Берем кубики, если юнит способен действовать
+            die_a = ac.dice_list[j] if (j < len(ac.dice_list) and atk_alive) else None
+            die_d = dc.dice_list[j] if (j < len(dc.dice_list) and def_alive) else None
+
+            # Если кубики кончились у обоих
+            if not die_a and not die_d: break
 
             ctx_a = self._create_roll_context(attacker, defender, die_a)
             ctx_d = self._create_roll_context(defender, attacker, die_d)
@@ -32,7 +41,7 @@ class ClashFlowMixin(ClashMechanicsMixin):
             val_a = ctx_a.final_value if ctx_a else 0
             val_d = ctx_d.final_value if ctx_d else 0
 
-            # Форматируем лог
+            # Форматируем лог (P1 всегда слева)
             val_p1 = val_a if is_p1_attacker else val_d
             val_p2 = val_d if is_p1_attacker else val_a
             res_str = f"{val_p1} vs {val_p2}"
@@ -40,28 +49,39 @@ class ClashFlowMixin(ClashMechanicsMixin):
             detail = ""
 
             if ctx_a and ctx_d:
+                # --- ПОЛНОЦЕННЫЙ КЛЕШ ---
                 if val_a > val_d:
                     detail = f"{attacker.name} Win!"
                     self._handle_clash_win(ctx_a)
                     self._handle_clash_lose(ctx_d)
-
                     self._resolve_clash_interaction(ctx_a, ctx_d, val_a - val_d)
 
                 elif val_d > val_a:
                     detail = f"{defender.name} Win!"
                     self._handle_clash_win(ctx_d)
                     self._handle_clash_lose(ctx_a)
-
                     self._resolve_clash_interaction(ctx_d, ctx_a, val_d - val_a)
 
                 else:
                     detail = "Draw!"
+
             elif ctx_a:
-                detail = "Unanswered"
-                self._apply_damage(ctx_a, None, "hp")
+                # --- У ЗАЩИТНИКА НЕТ КУБИКА (ИЛИ ОН СТАГГЕРНУТ) ---
+                # Если у атакующего АТАКА -> Урон
+                # Если у атакующего БЛОК/УКЛОНЕНИЕ -> Пропуск (или щит)
+                if ctx_a.dice.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]:
+                    detail = "Unanswered Hit"
+                    self._apply_damage(ctx_a, None, "hp")
+                else:
+                    detail = "Defensive (Skipped)"
+
             elif ctx_d:
-                detail = "Unanswered"
-                self._apply_damage(ctx_d, None, "hp")
+                # --- У АТАКУЮЩЕГО НЕТ КУБИКА ---
+                if ctx_d.dice.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]:
+                    detail = "Unanswered Hit"
+                    self._apply_damage(ctx_d, None, "hp")
+                else:
+                    detail = "Defensive (Skipped)"
 
             round_logs = []
             if ctx_a: round_logs.extend(ctx_a.log)
@@ -72,6 +92,7 @@ class ClashFlowMixin(ClashMechanicsMixin):
         return report
 
     def _resolve_clash_interaction(self, winner_ctx, loser_ctx, diff: int):
+        """Определяет эффект победы в зависимости от типа кубиков"""
         w_type = winner_ctx.dice.dtype
         l_type = loser_ctx.dice.dtype
 
@@ -83,29 +104,35 @@ class ClashFlowMixin(ClashMechanicsMixin):
         w_is_evd = w_type == DiceType.EVADE
         l_is_evd = l_type == DiceType.EVADE
 
-        # 1. ATTACK WINS
+        # 1. АТАКА ПОБЕДИЛА
         if w_is_atk:
             if l_is_atk:
+                # Atk vs Atk: Полный урон по HP
                 self._apply_damage(winner_ctx, loser_ctx, "hp")
             elif l_is_blk:
+                # Atk vs Block: Урон по HP = (Атака - Блок)
                 damage_amt = diff
                 self._deal_direct_damage(winner_ctx, loser_ctx.source, damage_amt, "hp")
             elif l_is_evd:
+                # Atk vs Evade: Полный урон
                 self._apply_damage(winner_ctx, loser_ctx, "hp")
 
-        # 2. BLOCK WINS
+        # 2. БЛОК ПОБЕДИЛ
         elif w_is_blk:
             if l_is_atk:
+                # Block vs Atk: Парирование -> Stagger урон атакующему
                 damage_amt = diff
                 self._deal_direct_damage(winner_ctx, loser_ctx.source, damage_amt, "stagger")
             elif l_is_blk:
+                # Block vs Block: Stagger урон проигравшему
                 damage_amt = diff
                 self._deal_direct_damage(winner_ctx, loser_ctx.source, damage_amt, "stagger")
             elif l_is_evd:
+                # Block vs Evade: Stagger урон уклоняющемуся
                 damage_amt = diff
                 self._deal_direct_damage(winner_ctx, loser_ctx.source, damage_amt, "stagger")
 
-        # 3. EVADE WINS
+        # 3. УКЛОНЕНИЕ ПОБЕДИЛО
         elif w_is_evd:
             winner_ctx.log.append("💨 Dodged!")
 
@@ -122,6 +149,7 @@ class ClashFlowMixin(ClashMechanicsMixin):
 
             detail = "One-Sided"
 
+            # В односторонней атаке работают только атакующие кубики
             if die.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]:
                 self._apply_damage(ctx, None, "hp")
             else:

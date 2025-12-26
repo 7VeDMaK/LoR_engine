@@ -1,3 +1,4 @@
+# logic/clash_mechanics.py
 import random
 from core.models import Dice, DiceType
 from logic.context import RollContext
@@ -8,16 +9,26 @@ from logic.passives import PASSIVE_REGISTRY
 
 class ClashMechanicsMixin:
     """
-    Низкоуровневая механика боя:
-    - Расчет урона
-    - Создание контекста броска
-    - Обработка событий (On Hit, On Clash Win/Lose)
+    Уровень 1: Низкоуровневая механика.
+    - Броски кубиков
+    - Нанесение урона (HP/Stagger)
+    - Обработка скриптов и пассивок
     """
 
     def _process_card_scripts(self, trigger: str, ctx: RollContext):
         die = ctx.dice
         if not die.scripts or trigger not in die.scripts: return
         for script_data in die.scripts[trigger]:
+            script_id = script_data.get("script_id")
+            params = script_data.get("params", {})
+            if script_id in SCRIPTS_REGISTRY: SCRIPTS_REGISTRY[script_id](ctx, params)
+
+    def _process_card_self_scripts(self, trigger: str, source, target):
+        card = source.current_card
+        if not card or not card.scripts or trigger not in card.scripts: return
+        # Логгер берется из self.logs основного класса
+        ctx = RollContext(source=source, target=target, dice=None, final_value=0, log=self.logs)
+        for script_data in card.scripts[trigger]:
             script_id = script_data.get("script_id")
             params = script_data.get("params", {})
             if script_id in SCRIPTS_REGISTRY: SCRIPTS_REGISTRY[script_id](ctx, params)
@@ -68,23 +79,23 @@ class ClashMechanicsMixin:
                 handler = getattr(PASSIVE_REGISTRY[pid], event_name, None)
                 if handler: handler(unit, *args)
 
-    def _process_card_self_scripts(self, trigger: str, source, target):
-        card = source.current_card
-        if not card or not card.scripts or trigger not in card.scripts: return
-        # Логгер берется из self.logs основного класса
-        ctx = RollContext(source=source, target=target, dice=None, final_value=0, log=self.logs)
-        for script_data in card.scripts[trigger]:
-            script_id = script_data.get("script_id")
-            params = script_data.get("params", {})
-            if script_id in SCRIPTS_REGISTRY: SCRIPTS_REGISTRY[script_id](ctx, params)
-
     # === DAMAGE CALCULATIONS ===
+
     def _deal_direct_damage(self, source_ctx: RollContext, target, amount: int, dmg_type: str):
+        """Наносит урон (HP или Stagger)."""
         if amount <= 0: return
 
         if dmg_type == "hp":
             dtype_name = source_ctx.dice.dtype.value.lower()
             res = getattr(target.hp_resists, dtype_name, 1.0)
+
+            # --- ВАЖНОЕ ИЗМЕНЕНИЕ: Stagger Multiplier ---
+            is_stag_hit = False
+            if target.is_staggered():
+                res *= 2.0
+                is_stag_hit = True
+            # ---------------------------------------------
+
             final_dmg = int(amount * res)
 
             barrier = target.get_status("barrier")
@@ -95,7 +106,11 @@ class ClashMechanicsMixin:
                 source_ctx.log.append(f"🛡️ Barrier -{absorbed}")
 
             target.current_hp -= final_dmg
-            source_ctx.log.append(f"💥 Hit {final_dmg} HP")
+
+            hit_msg = f"💥 Hit {final_dmg} HP"
+            if is_stag_hit:
+                hit_msg += " (Stagger x2!)"
+            source_ctx.log.append(hit_msg)
 
         elif dmg_type == "stagger":
             dtype_name = source_ctx.dice.dtype.value.lower()
@@ -106,17 +121,17 @@ class ClashMechanicsMixin:
             source_ctx.log.append(f"😵 Stagger Dmg {final_dmg}")
 
     def _apply_damage(self, attacker_ctx: RollContext, defender_ctx: RollContext, dmg_type: str = "hp"):
+        """Стандартный расчет урона от атаки."""
         attacker = attacker_ctx.source
         defender = attacker_ctx.target or attacker_ctx.target
 
-        # On Hit Events
+        # On Hit
         for status_id, stack in list(attacker.statuses.items()):
             if status_id in STATUS_REGISTRY: STATUS_REGISTRY[status_id].on_hit(attacker_ctx, stack)
         for pid in attacker.passives + attacker.talents:
             if pid in PASSIVE_REGISTRY: PASSIVE_REGISTRY[pid].on_hit(attacker_ctx)
         self._process_card_scripts("on_hit", attacker_ctx)
 
-        # Base Damage
         raw_damage = attacker_ctx.final_value
 
         # Modifiers
@@ -132,8 +147,8 @@ class ClashMechanicsMixin:
         # Apply Main Damage
         self._deal_direct_damage(attacker_ctx, defender, total_amt, dmg_type)
 
-        # Side effect: HP damage always causes some Stagger damage
-        if dmg_type == "hp":
+        # Атака по HP также наносит урон по Stagger (если цель еще не в стаггере)
+        if dmg_type == "hp" and not defender.is_staggered():
             dtype_name = attacker_ctx.dice.dtype.value.lower()
             res_stagger = getattr(defender.stagger_resists, dtype_name, 1.0)
             stg_dmg = int(total_amt * res_stagger)

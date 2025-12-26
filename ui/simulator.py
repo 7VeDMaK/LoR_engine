@@ -27,29 +27,44 @@ def capture_output():
 
 
 def roll_phase():
-    """Бросок кубиков скорости для обоих"""
+    """Бросок кубиков скорости. Если юнит в стаггере - он пропускает ход."""
     p1 = st.session_state['attacker']
     p2 = st.session_state['defender']
 
     p1.recalculate_stats()
     p2.recalculate_stats()
 
-    p1.roll_speed_dice()
-    p2.roll_speed_dice()
+    # --- ЛОГИКА СТАГГЕРА ПРИ БРОСКЕ ---
+    def process_roll(unit):
+        if unit.is_staggered():
+            # Если юнит в стаггере, он получает "пустой" слот и метку stunned
+            # Скорость 0, чтобы враги всегда были быстрее
+            unit.active_slots = [{
+                'speed': 0,
+                'card': None,
+                'target_slot': -1,
+                'is_aggro': False,
+                'stunned': True  # Метка: этот ход пропущен из-за стаггера
+            }]
+        else:
+            unit.roll_speed_dice()
 
-    # Авто-назначение целей
+    process_roll(p1)
+    process_roll(p2)
+
+    # Авто-назначение целей (если не стаггер)
     max_len = max(len(p1.active_slots), len(p2.active_slots))
     for i in range(max_len):
-        if i < len(p1.active_slots):
+        if i < len(p1.active_slots) and not p1.active_slots[i].get('stunned'):
             target = i if i < len(p2.active_slots) else -1
             p1.active_slots[i]['target_slot'] = target
 
-        if i < len(p2.active_slots):
+        if i < len(p2.active_slots) and not p2.active_slots[i].get('stunned'):
             target = i if i < len(p1.active_slots) else -1
             p2.active_slots[i]['target_slot'] = target
 
     st.session_state['phase'] = 'planning'
-    st.session_state['turn_message'] = "🎲 Speed Rolled! Assign Cards & Targets."
+    st.session_state['turn_message'] = "🎲 Speed Rolled!"
 
 
 def execute_combat():
@@ -66,12 +81,23 @@ def execute_combat():
     st.session_state['script_logs'] = captured.getvalue()
 
     msg = []
-    if p1.is_staggered():
+
+    # --- ИСПРАВЛЕННАЯ ЛОГИКА ВОССТАНОВЛЕНИЯ ---
+    # Мы восстанавливаем стаггер ТОЛЬКО если юнит провел ЭТОТ ход в состоянии оглушения.
+    # То есть, если в его слотах есть метка 'stunned'.
+
+    if p1.active_slots and p1.active_slots[0].get('stunned'):
         p1.current_stagger = p1.max_stagger
-        msg.append(f"{p1.name} recovered!")
-    if p2.is_staggered():
+        msg.append(f"✨ {p1.name} recovered from Stagger!")
+
+    if p2.active_slots and p2.active_slots[0].get('stunned'):
         p2.current_stagger = p2.max_stagger
-        msg.append(f"{p2.name} recovered!")
+        msg.append(f"✨ {p2.name} recovered from Stagger!")
+
+    # Обычное сообщение, если никто не восстанавливался
+    if not msg:
+        if p1.is_staggered(): msg.append(f"{p1.name} is Staggered!")
+        if p2.is_staggered(): msg.append(f"{p2.name} is Staggered!")
 
     st.session_state['turn_message'] = " ".join(msg) if msg else "Turn Complete."
 
@@ -117,6 +143,9 @@ def reset_game():
 
 def sync_state_from_widgets(unit: Unit, key_prefix: str):
     for i, slot in enumerate(unit.active_slots):
+        # Если слот оглушен, виджетов нет, пропускаем
+        if slot.get('stunned'): continue
+
         lib_key = f"{key_prefix}_lib_{i}"
         if lib_key in st.session_state:
             slot['card'] = st.session_state[lib_key]
@@ -128,40 +157,28 @@ def sync_state_from_widgets(unit: Unit, key_prefix: str):
             slot['is_aggro'] = st.session_state[aggro_key]
 
 
-# --- ПРЕДРАСЧЕТ (ИСПРАВЛЕННЫЙ) ---
 def precalculate_interactions(p1: Unit, p2: Unit):
-    """
-    1. Клонируем юнитов (или хотя бы их слоты), чтобы не менять реальное состояние до боя.
-    2. Применяем `ClashSystem.calculate_redirections` для симуляции перехвата.
-    3. Рассчитываем статусы UI.
-    4. Откатываем target_slot (если нужно) или оставляем как есть, если это легальное изменение для UI.
-
-    В данном случае мы можем менять target_slot "понарошку" или реально, так как resolve_turn все равно все пересчитает.
-    Но чтобы не путать пользователя, мы используем 'ui_status' как визуализацию.
-    """
-
-    # Чтобы не портить реальные таргеты до боя, работаем аккуратно.
-    # Но так как resolve_turn перезаписывает таргеты в calculate_redirections, мы можем вызвать его здесь смело.
-    # Главное, чтобы это соответствовало тому, что будет в бою.
-
-    # 1. Применяем логику перенаправления (как в бою)
     ClashSystem.calculate_redirections(p1, p2)
     ClashSystem.calculate_redirections(p2, p1)
 
-    # 2. Теперь слоты имеют target_slot с учетом перехвата. Строим UI.
     def _calc_ui(me, enemy):
         for i, my_slot in enumerate(me.active_slots):
+            # Если оглушен - статус простой
+            if my_slot.get('stunned'):
+                my_slot['ui_status'] = {"text": "😵 STAGGERED", "icon": "❌", "color": "gray"}
+                continue
+
             target_idx = my_slot.get('target_slot', -1)
-            status = {"text": "⛔ NO TARGET", "icon": "⛔"}
+            status = {"text": "⛔ NO TARGET", "icon": "⛔", "color": "gray"}
 
             if target_idx != -1 and target_idx < len(enemy.active_slots):
                 enemy_slot = enemy.active_slots[target_idx]
 
                 # Если враг целится в нас -> CLASH
                 if enemy_slot.get('target_slot') == i:
-                    status = {"text": f"CLASH S{target_idx + 1}", "icon": "⚔️"}
+                    status = {"text": f"CLASH S{target_idx + 1}", "icon": "⚔️", "color": "red"}
                 else:
-                    status = {"text": f"ATK S{target_idx + 1}", "icon": "🏹"}
+                    status = {"text": f"ATK S{target_idx + 1}", "icon": "🏹", "color": "orange"}
 
             my_slot['ui_status'] = status
 
@@ -171,8 +188,17 @@ def precalculate_interactions(p1: Unit, p2: Unit):
 
 def render_slot_strip(unit: Unit, opponent: Unit, slot_idx: int, key_prefix: str):
     slot = unit.active_slots[slot_idx]
+
+    # --- ОТРИСОВКА ДЛЯ ОГЛУШЕННОГО СЛОТА ---
+    if slot.get('stunned'):
+        with st.container(border=True):
+            st.error(f"😵 **UNIT STAGGERED** (Speed 0)")
+            st.caption("Персонаж оглушен и пропустит этот ход. Получаемый урон увеличен.")
+        return
+
+    # --- ОБЫЧНАЯ ОТРИСОВКА ---
     speed = slot['speed']
-    ui_stat = slot.get('ui_status', {"text": "...", "icon": ""})
+    ui_stat = slot.get('ui_status', {"text": "...", "icon": "", "color": "gray"})
     selected_card = slot.get('card')
     card_name = f"🃏 {selected_card.name}" if selected_card else "⚠️ No Page"
     label = f"S{slot_idx + 1} (🎲{speed}) | {ui_stat['icon']} {ui_stat['text']} | {card_name}"
@@ -184,11 +210,12 @@ def render_slot_strip(unit: Unit, opponent: Unit, slot_idx: int, key_prefix: str
         target_labels = {-1: "⛔ None"}
         for i, opp_slot in enumerate(opponent.active_slots):
             target_options.append(i)
-            # Иконка показывает, что враг делает
-            # Тут можно показать, куда он целится сейчас
             opp_tgt = opp_slot.get('target_slot', -1)
             icon = "⚔️" if opp_tgt == slot_idx else "🛡️"
-            target_labels[i] = f"{icon} S{i + 1} (Spd {opp_slot['speed']})"
+            # Если враг оглушен, пишем это
+            opp_spd = opp_slot['speed']
+            extra = "😵" if opp_slot.get('stunned') else f"Spd {opp_spd}"
+            target_labels[i] = f"{icon} S{i + 1} ({extra})"
 
         current_tgt = slot.get('target_slot', -1)
         if current_tgt not in target_options: current_tgt = -1
@@ -282,11 +309,9 @@ def render_simulator_page():
     p1.recalculate_stats()
     p2.recalculate_stats()
 
-    # SYNC STATE FIRST
     if p1.active_slots: sync_state_from_widgets(p1, "p1")
     if p2.active_slots: sync_state_from_widgets(p2, "p2")
 
-    # PRECALCULATE WITH REAL LOGIC
     precalculate_interactions(p1, p2)
 
     col_info_l, col_info_r = st.columns(2, gap="medium")
