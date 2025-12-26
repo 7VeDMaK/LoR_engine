@@ -1,5 +1,5 @@
-from core.dice import Dice
-from core.models import DiceType
+# logic/clash_flow.py
+from core.models import DiceType, Dice
 from logic.clash_mechanics import ClashMechanicsMixin
 
 
@@ -10,6 +10,16 @@ class ClashFlowMixin(ClashMechanicsMixin):
     - Односторонняя атака
     - Таблица взаимодействий кубиков (Interaction Table)
     """
+
+    # --- [NEW] Хелпер для форматирования "Base + Bonus" ---
+    def _fmt_roll(self, ctx):
+        if not ctx: return "0"
+        bonus = ctx.final_value - ctx.base_value
+        sign = "+" if bonus >= 0 else ""
+        # Пример: 5 + 9
+        return f"{ctx.base_value} {sign} {bonus}"
+
+    # -----------------------------------------------------
 
     def _resolve_card_clash(self, attacker, defender, round_label: str, is_p1_attacker: bool):
         report = []
@@ -42,10 +52,16 @@ class ClashFlowMixin(ClashMechanicsMixin):
             val_a = ctx_a.final_value if ctx_a else 0
             val_d = ctx_d.final_value if ctx_d else 0
 
-            # Форматируем лог (P1 всегда слева)
-            val_p1 = val_a if is_p1_attacker else val_d
-            val_p2 = val_d if is_p1_attacker else val_a
-            res_str = f"{val_p1} vs {val_p2}"
+            # --- [UPDATED] Форматируем лог (Base + Mod) ---
+            str_a = self._fmt_roll(ctx_a)
+            str_d = self._fmt_roll(ctx_d)
+
+            # P1 всегда слева для консистентности
+            val_p1_str = str_a if is_p1_attacker else str_d
+            val_p2_str = str_d if is_p1_attacker else str_a
+
+            res_str = f"{val_p1_str} vs {val_p2_str}"
+            # ----------------------------------------------
 
             detail = ""
 
@@ -68,8 +84,6 @@ class ClashFlowMixin(ClashMechanicsMixin):
 
             elif ctx_a:
                 # --- У ЗАЩИТНИКА НЕТ КУБИКА (ИЛИ ОН СТАГГЕРНУТ) ---
-                # Если у атакующего АТАКА -> Урон
-                # Если у атакующего БЛОК/УКЛОНЕНИЕ -> Пропуск (или щит)
                 if ctx_a.dice.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]:
                     detail = "Unanswered Hit"
                     self._apply_damage(ctx_a, None, "hp")
@@ -145,15 +159,19 @@ class ClashFlowMixin(ClashMechanicsMixin):
         # === ЛОГИКА ПАССИВКИ "Махнуть хвостиком" (Wag the Tail) ===
         reaction_die = None
 
-        # Проверяем наличие ID пассивки в списке пассивок юнита
+        # Проверяем наличие пассивки у цели
         if "wag_tail" in target.passives:
-            # Расчет значений (база 5-7)
-            # Можно добавить скалирование от уровня, например: +1 за каждые 10 уровней
-            bonus = target.level // 10
-            min_v = 5 + bonus
-            max_v = 7 + bonus
-
+            # 1. Создаем БАЗОВЫЙ кубик 5-7 (без бонусов)
+            min_v = 5
+            max_v = 7
             reaction_die = Dice(min_v, max_v, DiceType.EVADE)
+
+            # 2. Логируем активацию
+            report.append({
+                "round": "Reaction",
+                "rolls": "Passive",
+                "details": f"🦊 **{target.name}** prepares to Wag the Tail! (Base Evade {min_v}-{max_v})"
+            })
         # ==========================================================
 
         for j, die in enumerate(card.dice_list):
@@ -161,6 +179,10 @@ class ClashFlowMixin(ClashMechanicsMixin):
 
             ctx = self._create_roll_context(source, target, die)
             val = ctx.final_value
+
+            # --- [UPDATED] Формат ролла атакующего ---
+            roll_display = self._fmt_roll(ctx)
+            # -----------------------------------------
 
             detail = "One-Sided"
 
@@ -173,13 +195,22 @@ class ClashFlowMixin(ClashMechanicsMixin):
                 if reaction_die:
                     # Кидаем кубик реакции (защитника)
                     def_ctx = self._create_roll_context(target, source, reaction_die)
+
+                    # --- [NEW] Применяем бонус пассивки (Level / 10) здесь ---
+                    # Чтобы в логе было видно "+X"
+                    if "wag_tail" in target.passives:
+                        bonus = max(0, target.level // 10)
+                        if bonus > 0:
+                            def_ctx.modify_power(bonus, "Tail Mastery")
+
                     val_def = def_ctx.final_value
 
-                    detail += f" vs {val_def} (Tail)"
+                    # Обновляем строку роллов: Атака vs Уворот
+                    roll_display = f"{self._fmt_roll(ctx)} vs {self._fmt_roll(def_ctx)}"
 
                     if val_def > val:
                         # УСПЕШНОЕ УКЛОНЕНИЕ
-                        detail += " 💨 Dodged!"
+                        detail += " 💨 Dodged! (Tail)"
                         hit_successful = False
                         # Кубик НЕ уничтожается (Recycle), он попробует уклониться от следующего удара
                     else:
@@ -195,6 +226,6 @@ class ClashFlowMixin(ClashMechanicsMixin):
                 detail = "Defensive Die (Skipped)"
 
             if ctx.log: detail += " | " + " ".join(ctx.log)
-            report.append({"round": f"{round_label} (D{j + 1})", "rolls": f"{val}", "details": detail})
+            report.append({"round": f"{round_label} (D{j + 1})", "rolls": roll_display, "details": detail})
 
         return report

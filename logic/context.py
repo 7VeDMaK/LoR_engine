@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from typing import List, Optional, TYPE_CHECKING
 
-# TYPE_CHECKING нужен, чтобы не было ошибок импорта моделей при запуске
 if TYPE_CHECKING:
     from core.models import Unit, Dice
 
@@ -15,6 +14,11 @@ class RollContext:
     target: Optional['Unit']
     dice: Optional['Dice']
     final_value: int
+
+    # --- [NEW] Чистое значение броска (для логов "5 + X") ---
+    base_value: int = 0
+    # --------------------------------------------------------
+
     log: List[str] = field(default_factory=list)
 
     # === НОВЫЕ ПОЛЯ ДЛЯ КРИТОВ ===

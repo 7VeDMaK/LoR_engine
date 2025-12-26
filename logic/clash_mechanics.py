@@ -33,7 +33,10 @@ class ClashMechanicsMixin:
     def _create_roll_context(self, source, target, die: Dice) -> RollContext:
         if not die: return None
         roll = random.randint(die.min_val, die.max_val)
-        ctx = RollContext(source=source, target=target, dice=die, final_value=roll)
+
+        # --- [UPDATED] Передаем base_value=roll ---
+        ctx = RollContext(source=source, target=target, dice=die, final_value=roll, base_value=roll)
+        # ------------------------------------------
 
         # Stat bonuses
         if die.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]:
