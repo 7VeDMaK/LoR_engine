@@ -41,6 +41,8 @@ class Unit(UnitStatusMixin, UnitCombatMixin, UnitLifecycleMixin):
     max_stagger: int = 10
     current_stagger: int = 10
 
+    deck: List[str] = field(default_factory=list)
+
     # === БОЕВАЯ СИСТЕМА (Слоты и Скорость) ===
     computed_speed_dice: List[Tuple[int, int]] = field(default_factory=list)
     active_slots: List[Dict] = field(default_factory=list)
@@ -95,6 +97,7 @@ class Unit(UnitStatusMixin, UnitCombatMixin, UnitLifecycleMixin):
                 "imp_hp": self.implants_hp_pct, "imp_sp": self.implants_sp_pct,
                 "tal_hp": self.talents_hp_pct, "tal_sp": self.talents_sp_pct
             },
+            "deck": self.deck,
             "base_stats": {
                 "current_hp": self.current_hp, "current_sp": self.current_sp,
                 "current_stagger": self.current_stagger
@@ -122,6 +125,8 @@ class Unit(UnitStatusMixin, UnitCombatMixin, UnitLifecycleMixin):
         u.rank = data.get("rank", 9)
         u.avatar = data.get("avatar", None)
         u.base_intellect = data.get("base_intellect", 1)
+
+        u.deck = data.get("deck", [])
 
         # Модификаторы
         pct = data.get("pct_mods", {})

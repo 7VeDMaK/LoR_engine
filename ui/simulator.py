@@ -180,7 +180,18 @@ def render_slot_strip(unit: Unit, opponent: Unit, slot_idx: int, key_prefix: str
         return
 
     # --- АВТО-ВЫБОР КАРТЫ ---
-    all_cards = Library.get_all_cards()
+    if unit.deck:
+        # Если у юнита есть колода, загружаем только эти карты
+        # Используем Library.get_card(id), чтобы получить объекты
+        unit_cards = [Library.get_card(cid) for cid in unit.deck]
+
+        # (Опционально) Добавляем карту "Пропуск/Пас", если нужно
+        # или проверяем, что карты вообще загрузились
+        all_cards = unit_cards if unit_cards else Library.get_all_cards()
+    else:
+        # Если колода пуста (например, старый персонаж или моб),
+        # показываем ВСЕ карты (режим песочницы)
+        all_cards = Library.get_all_cards()
     if slot.get('card') is None and all_cards:
         slot['card'] = all_cards[0]
 

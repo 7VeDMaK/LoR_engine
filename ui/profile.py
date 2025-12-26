@@ -1,6 +1,8 @@
 import streamlit as st
 import random
 import os
+
+from core.library import Library
 from core.models import Unit
 from core.unit_library import UnitLibrary
 # ИМПОРТИРУЕМ ОБА РЕЕСТРА
@@ -150,6 +152,46 @@ def render_profile_page():
 
     st.markdown("---")
 
+    st.markdown("---")
+    st.subheader("🃏 Боевая колода (Deck)")
+
+    # 1. Получаем все доступные карты в библиотеке
+    all_library_cards = Library.get_all_cards()
+    # Создаем словарь {id: card_obj} для удобства
+    card_map = {c.id: c for c in all_library_cards}
+    # Список ID для selectbox (используем имя для отображения, но id для логики)
+    all_card_ids = [c.id for c in all_library_cards]
+
+    # 2. Интерфейс выбора карт (Multiselect)
+    # Фильтруем текущую деку, чтобы удалить ID карт, которых больше нет в библиотеке
+    valid_current_deck = [cid for cid in unit.deck if cid in card_map]
+
+    selected_ids = st.multiselect(
+        "Выберите карты для колоды персонажа:",
+        options=all_card_ids,
+        default=valid_current_deck,
+        format_func=lambda
+            x: f"{card_map[x].name} (Tier {card_map[x].tier}) - {card_map[x].card_type}" if x in card_map else x
+    )
+
+    # 3. Сохраняем выбор в юните
+    if selected_ids != unit.deck:
+        unit.deck = selected_ids
+        # (Необязательно) Автосохранение можно сделать тут или оставить на общей кнопке Save
+        # UnitLibrary.save_unit(unit)
+
+    # Отображение количества
+    st.caption(f"Карт в колоде: {len(unit.deck)}")
+
+    # Визуальный просмотр выбранных (опционально, кратко)
+    if unit.deck:
+        with st.expander("Просмотр состава колоды"):
+            for cid in unit.deck:
+                c = card_map.get(cid)
+                if c:
+                    st.text(f"- {c.name}")
+
+    st.markdown("---")
     # === РАЗДЕЛЕНИЕ: ТАЛАНТЫ И ПАССИВКИ ===
     st.subheader("🧬 Таланты и Способности")
 
