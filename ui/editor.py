@@ -80,7 +80,7 @@ def render_editor_page():
                 d_max = mm_c2.number_input("Max", 1, 50, 5, key=f"d_max_{i}")
 
                 # --- POPUP с эффектами кубика ---
-                with st.popover("✨ Effects", use_container_width=True):
+                with st.popover("✨ Effects", width='stretch'):
                     st.caption(f"Dice {i + 1} Settings")
 
                     e1, e2 = st.columns([2, 1])

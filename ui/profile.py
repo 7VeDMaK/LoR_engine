@@ -43,7 +43,7 @@ def render_profile_page():
 
     unit = roster[sel]
 
-    if st.button("💾 СОХРАНИТЬ", type="primary", use_container_width=True):
+    if st.button("💾 СОХРАНИТЬ", type="primary", width='stretch'):
         UnitLibrary.save_unit(unit);
         st.toast("Сохранено!", icon="✅")
 
@@ -54,7 +54,7 @@ def render_profile_page():
     # --- ЛЕВАЯ КОЛОНКА ---
     with col_l:
         img = unit.avatar if unit.avatar and os.path.exists(unit.avatar) else "https://placehold.co/150x150/png?text=?"
-        st.image(img, use_container_width=True)
+        st.image(img, width='stretch')
         upl = st.file_uploader("Арт", type=['png', 'jpg'], label_visibility="collapsed")
         if upl: unit.avatar = save_avatar_file(upl, unit.name); UnitLibrary.save_unit(unit); st.rerun()
 

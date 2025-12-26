@@ -339,7 +339,7 @@ def render_active_abilities(unit, unit_key):
                 disabled = False
                 help_txt = passive_obj.description
 
-            if st.button(label, key=f"act_{unit_key}_{pid}", disabled=disabled, use_container_width=True,
+            if st.button(label, key=f"act_{unit_key}_{pid}", disabled=disabled, width='stretch',
                          help=help_txt):
                 # Логика активации
                 def log_f(msg):
@@ -394,7 +394,7 @@ def render_simulator_page():
         c1, c2 = st.columns([1, 1])
         with c1:
             img = p1.avatar if p1.avatar and os.path.exists(p1.avatar) else "https://placehold.co/150x150/png?text=P1"
-            st.image(img, use_container_width=True)
+            st.image(img, width='stretch')
         with c2:
             render_unit_stats(p1)
         render_combat_info(p1)
@@ -405,7 +405,7 @@ def render_simulator_page():
             render_unit_stats(p2)
         with c2:
             img = p2.avatar if p2.avatar and os.path.exists(p2.avatar) else "https://placehold.co/150x150/png?text=P2"
-            st.image(img, use_container_width=True)
+            st.image(img, width='stretch')
         render_combat_info(p2)
 
     # === БЛОК АКТИВНЫХ СПОСОБНОСТЕЙ ===
@@ -441,9 +441,9 @@ def render_simulator_page():
     btn_col = st.columns([1, 2, 1])[1]
     with btn_col:
         if st.session_state['phase'] == 'roll':
-            st.button("🎲 ROLL SPEED INITIATIVE", type="primary", on_click=roll_phase, use_container_width=True)
+            st.button("🎲 ROLL SPEED INITIATIVE", type="primary", on_click=roll_phase, width='stretch')
         else:
-            st.button("⚔️ EXECUTE TURN", type="primary", on_click=execute_combat, use_container_width=True)
+            st.button("⚔️ EXECUTE TURN", type="primary", on_click=execute_combat, width='stretch')
 
     st.subheader("📜 Battle Report")
     if st.session_state.get('turn_message'):
