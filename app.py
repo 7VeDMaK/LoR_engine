@@ -14,10 +14,19 @@ apply_styles()
 if 'roster' not in st.session_state:
     loaded_roster = UnitLibrary.load_all()
 
-    # Если папка пуста, создаем тестового, чтобы не было скучно
+    # Если папка пуста, создаем тестового Роланда
     if not loaded_roster:
-        roland = Unit("Roland", max_hp=100)
+        roland = Unit("Roland")
+        # Настраиваем статы
         roland.attributes["endurance"] = 5
+        roland.attributes["strength"] = 5
+        roland.base_hp = 75  # База 20 + 75 = 95 (+ выносливость)
+
+        # ВАЖНО: Пересчитываем статы и лечим его полностью при создании
+        roland.recalculate_stats()
+        roland.current_hp = roland.max_hp  # <--- Вот это фиксит проблему "20 хп"
+        roland.current_sp = roland.max_sp
+
         UnitLibrary.save_unit(roland)
         loaded_roster = UnitLibrary.load_all()
 

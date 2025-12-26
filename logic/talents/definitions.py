@@ -57,9 +57,8 @@ class TalentBerserkerRage(BasePassive):
         if unit.cooldowns.get(self.id, 0) > 0: return False
         unit.active_buffs[self.id] = self.duration
         unit.cooldowns[self.id] = self.cooldown
-        unit.add_status("strength", 1, duration=3)
         if log_func:
-            log_func(f"😡 {self.name}: Активирована! (+1 Куб Атаки, +1 Силы)")
+            log_func(f"😡 {self.name}: Активирована! (+1 Куб Атаки)")
         return True
 
 
