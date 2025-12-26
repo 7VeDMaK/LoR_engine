@@ -1,10 +1,12 @@
+# ui/profile.py
 import streamlit as st
 import random
 import os
 from core.models import Unit
 from core.unit_library import UnitLibrary
-# Импортируем реестр, чтобы видеть реальные описания из logic/passives.py
+# ИМПОРТИРУЕМ ОБА РЕЕСТРА
 from logic.passives import PASSIVE_REGISTRY
+from logic.talents import TALENT_REGISTRY
 
 ATTR_LABELS = {"strength": "Сила", "endurance": "Стойкость", "agility": "Ловкость", "wisdom": "Мудрость",
                "psych": "Психика"}
@@ -41,7 +43,7 @@ def render_profile_page():
 
     unit = roster[sel]
 
-    if st.button("💾 СОХРАНИТЬ", type="primary", use_container_width=True):
+    if st.button("💾 СОХРАНИТЬ", type="primary", width='stretch'):
         UnitLibrary.save_unit(unit);
         st.toast("Сохранено!", icon="✅")
 
@@ -52,7 +54,7 @@ def render_profile_page():
     # --- ЛЕВАЯ КОЛОНКА ---
     with col_l:
         img = unit.avatar if unit.avatar and os.path.exists(unit.avatar) else "https://placehold.co/150x150/png?text=?"
-        st.image(img, use_container_width=True)
+        st.image(img, width='stretch')
         upl = st.file_uploader("Арт", type=['png', 'jpg'], label_visibility="collapsed")
         if upl: unit.avatar = save_avatar_file(upl, unit.name); UnitLibrary.save_unit(unit); st.rerun()
 
@@ -65,7 +67,6 @@ def render_profile_page():
         unit.base_intellect = st.number_input("Int Base", 1, 30, unit.base_intellect, label_visibility="collapsed")
         st.info(f"Интеллект: **{unit.base_intellect + (unit.attributes['wisdom'] // 3)}**")
 
-        # === ВЕРНУЛ СКОРОСТНЫЕ КУБИКИ ===
         st.divider()
         st.markdown(f"**🧊 Скорость:**")
         if unit.computed_speed_dice:
@@ -140,7 +141,6 @@ def render_profile_page():
         for i, k in enumerate(["strength", "endurance", "agility", "wisdom", "psych"]):
             unit.attributes[k] = acols[i].number_input(ATTR_LABELS[k], 0, 30, unit.attributes[k])
 
-        # === ВЕРНУЛ СПИСОК НАВЫКОВ ===
         st.caption("Навыки")
         with st.expander("Список навыков", expanded=True):
             scols = st.columns(3)
@@ -151,59 +151,76 @@ def render_profile_page():
 
     st.markdown("---")
 
-    # === ВЫБОР ТАЛАНТОВ (НОВАЯ ЛОГИКА) ===
+    # === РАЗДЕЛЕНИЕ: ТАЛАНТЫ И ПАССИВКИ ===
     st.subheader("🧬 Таланты и Способности")
 
-    # Функция для красивого отображения
-    def format_talent_name(tid):
-        if tid in PASSIVE_REGISTRY:
-            return PASSIVE_REGISTRY[tid].name
-        return tid
+    def format_ability_name(aid):
+        if aid in TALENT_REGISTRY:
+            return f"{TALENT_REGISTRY[aid].name}"
+        if aid in PASSIVE_REGISTRY:
+            return f"(P) {PASSIVE_REGISTRY[aid].name}"
+        return aid
 
-    col_tal, col_info = st.columns([2, 1])
+    col_lists, col_info = st.columns([2, 1])
 
-    with col_tal:
-        total_tal = unit.level // 3
-        st.markdown(f"**Выберите Таланты** (Макс: {total_tal})")
+    with col_lists:
+        # 1. ТАЛАНТЫ (с лимитом)
+        total_tal_pts = unit.level // 3
+        st.markdown(f"**🌟 Таланты** (Очки: {len(unit.talents)} / {total_tal_pts})")
 
-        registry_options = list(PASSIVE_REGISTRY.keys())
-        all_options = sorted(list(set(registry_options + unit.talents)))
-
-        selected = st.multiselect(
-            "Список талантов",
-            options=all_options,
-            default=unit.talents,
-            format_func=format_talent_name,
-            max_selections=total_tal,
-            label_visibility="collapsed"
+        tal_options = sorted(list(TALENT_REGISTRY.keys()))
+        unit.talents = st.multiselect(
+            "Выберите таланты",
+            options=tal_options,
+            default=[t for t in unit.talents if t in TALENT_REGISTRY],
+            format_func=format_ability_name,
+            max_selections=total_tal_pts,
+            key="ms_talents"
         )
-        unit.talents = selected
 
-        if len(unit.talents) < total_tal:
-            st.info(f"Можно выбрать еще {total_tal - len(unit.talents)}")
-        elif len(unit.talents) == total_tal and total_tal > 0:
-            st.success("Все очки талантов распределены")
+        # 2. ПАССИВКИ (без лимита)
+        st.markdown(f"**🛡️ Пассивные способности**")
+        pass_options = sorted(list(PASSIVE_REGISTRY.keys()))
+        unit.passives = st.multiselect(
+            "Выберите пассивки",
+            options=pass_options,
+            default=[p for p in unit.passives if p in PASSIVE_REGISTRY],
+            format_func=format_ability_name,
+            key="ms_passives"
+        )
+
+        # Ручное добавление для кастомных ID
+        with st.expander("➕ Добавить Custom ID вручную"):
+            new_id = st.text_input("ID").strip()
+            target_list = st.radio("Куда добавить?", ["Talents", "Passives"])
+            if st.button("Добавить") and new_id:
+                if target_list == "Talents" and new_id not in unit.talents:
+                    unit.talents.append(new_id)
+                    st.rerun()
+                elif target_list == "Passives" and new_id not in unit.passives:
+                    unit.passives.append(new_id)
+                    st.rerun()
 
     with col_info:
-        st.markdown("**Описание:**")
-        if unit.talents:
-            for t_id in unit.talents:
-                if t_id in PASSIVE_REGISTRY:
-                    p_obj = PASSIVE_REGISTRY[t_id]
-                    with st.expander(f"ℹ️ {p_obj.name}"):
-                        st.write(p_obj.description)
-                else:
-                    st.caption(f"{t_id}: (Custom ID)")
-        else:
-            st.caption("Пусто")
+        st.markdown("**Описание выбранного:**")
 
-    # Ручное добавление
-    with st.expander("➕ Добавить ID вручную"):
-        new_id = st.text_input("ID").strip()
-        if st.button("Добавить") and new_id:
-            if new_id not in unit.talents:
-                unit.talents.append(new_id)
-                st.rerun()
+        # Показываем инфо по всем выбранным
+        all_selected = unit.talents + unit.passives
+        if all_selected:
+            for aid in all_selected:
+                obj = None
+                if aid in TALENT_REGISTRY:
+                    obj = TALENT_REGISTRY[aid]
+                elif aid in PASSIVE_REGISTRY:
+                    obj = PASSIVE_REGISTRY[aid]
+
+                if obj:
+                    with st.expander(f"ℹ️ {obj.name}"):
+                        st.write(obj.description)
+                else:
+                    st.caption(f"{aid}: (Custom ID)")
+        else:
+            st.caption("Ничего не выбрано")
 
     # === ЛОГИ БОНУСОВ ===
     with st.expander("📜 Подробный лог бонусов", expanded=False):

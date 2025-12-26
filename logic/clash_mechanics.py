@@ -1,9 +1,11 @@
+# logic/clash_mechanics.py
 import random
 from core.models import Dice, DiceType
 from logic.context import RollContext
 from logic.status_definitions import STATUS_REGISTRY
 from logic.card_scripts import SCRIPTS_REGISTRY
 from logic.passives import PASSIVE_REGISTRY
+from logic.talents import TALENT_REGISTRY
 
 
 class ClashMechanicsMixin:
@@ -42,11 +44,17 @@ class ClashMechanicsMixin:
         elif die.dtype == DiceType.EVADE:
             ctx.modify_power(source.modifiers.get("power_evade", 0), "Stats")
 
-        # Statuses & Passives
+        # Statuses
         for status_id, stack in list(source.statuses.items()):
             if status_id in STATUS_REGISTRY: STATUS_REGISTRY[status_id].on_roll(ctx, stack)
-        for pid in source.passives + source.talents:
+
+        # Passives
+        for pid in source.passives:
             if pid in PASSIVE_REGISTRY: PASSIVE_REGISTRY[pid].on_roll(ctx)
+
+        # Talents (NEW)
+        for pid in source.talents:
+            if pid in TALENT_REGISTRY: TALENT_REGISTRY[pid].on_roll(ctx)
 
         self._process_card_scripts("on_roll", ctx)
         return ctx
@@ -54,24 +62,40 @@ class ClashMechanicsMixin:
     def _handle_clash_win(self, ctx: RollContext):
         for status_id, stack in list(ctx.source.statuses.items()):
             if status_id in STATUS_REGISTRY: STATUS_REGISTRY[status_id].on_clash_win(ctx, stack)
-        for pid in ctx.source.passives + ctx.source.talents:
+
+        for pid in ctx.source.passives:
             if pid in PASSIVE_REGISTRY: PASSIVE_REGISTRY[pid].on_clash_win(ctx)
+        for pid in ctx.source.talents:
+            if pid in TALENT_REGISTRY: TALENT_REGISTRY[pid].on_clash_win(ctx)
+
         self._process_card_scripts("on_clash_win", ctx)
 
     def _handle_clash_lose(self, ctx: RollContext):
         for status_id, stack in list(ctx.source.statuses.items()):
             if status_id in STATUS_REGISTRY: STATUS_REGISTRY[status_id].on_clash_lose(ctx, stack)
-        for pid in ctx.source.passives + ctx.source.talents:
+
+        for pid in ctx.source.passives:
             if pid in PASSIVE_REGISTRY: PASSIVE_REGISTRY[pid].on_clash_lose(ctx)
+        for pid in ctx.source.talents:
+            if pid in TALENT_REGISTRY: TALENT_REGISTRY[pid].on_clash_lose(ctx)
 
     def _trigger_unit_event(self, event_name, unit, *args):
+        # Statuses
         for status_id, stack in list(unit.statuses.items()):
             if status_id in STATUS_REGISTRY:
                 handler = getattr(STATUS_REGISTRY[status_id], event_name, None)
                 if handler: handler(unit, *args)
-        for pid in unit.passives + unit.talents:
+
+        # Passives
+        for pid in unit.passives:
             if pid in PASSIVE_REGISTRY:
                 handler = getattr(PASSIVE_REGISTRY[pid], event_name, None)
+                if handler: handler(unit, *args)
+
+        # Talents (NEW)
+        for pid in unit.talents:
+            if pid in TALENT_REGISTRY:
+                handler = getattr(TALENT_REGISTRY[pid], event_name, None)
                 if handler: handler(unit, *args)
 
     # === DAMAGE CALCULATIONS ===
@@ -121,8 +145,12 @@ class ClashMechanicsMixin:
         # On Hit Events
         for status_id, stack in list(attacker.statuses.items()):
             if status_id in STATUS_REGISTRY: STATUS_REGISTRY[status_id].on_hit(attacker_ctx, stack)
-        for pid in attacker.passives + attacker.talents:
+
+        for pid in attacker.passives:
             if pid in PASSIVE_REGISTRY: PASSIVE_REGISTRY[pid].on_hit(attacker_ctx)
+        for pid in attacker.talents:
+            if pid in TALENT_REGISTRY: TALENT_REGISTRY[pid].on_hit(attacker_ctx)
+
         self._process_card_scripts("on_hit", attacker_ctx)
 
         raw_damage = attacker_ctx.final_value
@@ -138,15 +166,11 @@ class ClashMechanicsMixin:
         total_amt = max(0, raw_damage + dmg_bonus + incoming_mod)
 
         # === КРИТИЧЕСКИЙ УДАР (МНОЖИТЕЛЬ) ===
-        # Применяем множитель, если статус или пассивка выставили его
         if attacker_ctx.damage_multiplier != 1.0:
             total_amt = int(total_amt * attacker_ctx.damage_multiplier)
-            # Лог о крите уже должен быть добавлен в on_hit статуса
 
-        # Apply Main Damage
         self._deal_direct_damage(attacker_ctx, defender, total_amt, dmg_type)
 
-        # Атака по HP также наносит урон по Stagger (если цель еще не в стаггере)
         if dmg_type == "hp" and not defender.is_staggered():
             dtype_name = attacker_ctx.dice.dtype.value.lower()
             res_stagger = getattr(defender.stagger_resists, dtype_name, 1.0)
