@@ -1,4 +1,5 @@
 import json
+import random
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any, Tuple
 
@@ -50,14 +51,19 @@ class Unit:
     max_stagger: int = 10
     current_stagger: int = 10
 
-    # Скорость: теперь список диапазонов [(min, max), (min, max)...]
+    # Скорость: список диапазонов [(min, max), ...]
     computed_speed_dice: List[Tuple[int, int]] = field(default_factory=list)
+
+    # === БОЕВАЯ ФАЗА ===
+    # [{'speed': 5, 'card': Card, 'target_slot': 0, 'is_aggro': False}, ...]
+    active_slots: List[Dict] = field(default_factory=list)
 
     # === БРОНЯ ===
     armor_name: str = "Standard Fixer Suit"
     armor_type: str = "Medium"
     hp_resists: 'Resistances' = field(default_factory=lambda: Resistances())
     stagger_resists: 'Resistances' = field(default_factory=lambda: Resistances())
+
     current_card: Optional['Card'] = None
 
     # === АТРИБУТЫ ===
@@ -83,7 +89,6 @@ class Unit:
     modifiers: Dict[str, int] = field(default_factory=dict)
     level_rolls: Dict[str, Dict[str, int]] = field(default_factory=dict)
 
-    # === ПАМЯТЬ ДЛЯ ПАССИВОК (НОВОЕ ПОЛЕ) ===
     memory: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self):
@@ -140,7 +145,22 @@ class Unit:
         from core.calculations import recalculate_unit_stats
         return recalculate_unit_stats(self)
 
-    # --- МЕТОДЫ ДЛЯ СИМУЛЯТОРА (восстановленные) ---
+    # === НОВАЯ ЛОГИКА СКОРОСТИ ===
+    def roll_speed_dice(self):
+        self.active_slots = []
+        for (d_min, d_max) in self.computed_speed_dice:
+            mod = self.get_status("haste") - self.get_status("slow") - self.get_status("bind")
+            val = random.randint(d_min, d_max) + mod
+            val = max(1, val)
+
+            self.active_slots.append({
+                'speed': val,
+                'card': None,
+                'target_slot': None,
+                'is_aggro': False  # <--- НОВОЕ ПОЛЕ: ПРИНУДИТЕЛЬНЫЙ КЛЕШ
+            })
+
+    # --- МЕТОДЫ ДЛЯ СИМУЛЯТОРА ---
     def is_staggered(self):
         return self.current_stagger <= 0
 
@@ -178,7 +198,9 @@ class Unit:
         for item in items:
             if rem <= 0: new_items.append(item); continue
             if item["amount"] > rem:
-                item["amount"] -= rem; rem = 0; new_items.append(item)
+                item["amount"] -= rem;
+                rem = 0;
+                new_items.append(item)
             else:
                 rem -= item["amount"]
         if not new_items:
