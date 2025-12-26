@@ -15,11 +15,11 @@ def render_editor_page():
     # --- 1. Основные параметры ---
     with st.container(border=True):
         c1, c2, c3 = st.columns([3, 1, 1])
-        name = c1.text_input("Card Name", "Focus Strike", placeholder="Название карты")
+        name = c1.text_input("Card Name", "", placeholder="Название карты")
         tier = c2.selectbox("Tier", [1, 2, 3], index=0)
         ctype = c3.selectbox("Type", ["melee", "ranged"])
 
-        desc = st.text_area("Description", "On Use: Gain 3 Self Control", height=68,
+        desc = st.text_area("Description", "", height=68,
                             placeholder="Описание карты...")
 
     # --- 2. Эффекты Карты (Card Scripts) ---
@@ -31,7 +31,7 @@ def render_editor_page():
 
         ce_col1, ce_col2, ce_col3 = st.columns([1, 1, 1])
         ce_trigger = ce_col1.selectbox("Триггер", ["on_use", "on_combat_end"], key="ce_trig")
-        ce_type = ce_col2.selectbox("Тип эффекта", ["None", "Restore HP", "Apply Status", "Restore SP"], key="ce_type")
+        ce_type = ce_col2.selectbox("Тип эффекта", ["None", "Restore HP", "Restore SP", "Apply Status", "Steal Status"], key="ce_type")
 
         script_payload = {}
 
@@ -62,7 +62,12 @@ def render_editor_page():
                 cd1, cd2, cd3 = st.columns(3)
                 s_dur = cd1.number_input("Длительность", 1, 10, 1, key="ce_st_dur", help="Сколько ходов висит")
                 s_del = cd2.number_input("Задержка", 0, 5, 0, key="ce_st_del", help="Через сколько ходов сработает")
-                s_tgt = cd3.selectbox("Цель", ["self", "target"], key="ce_st_tgt")
+                s_tgt = cd3.selectbox(
+                    "Цель",
+                    ["self", "target", "all"],
+                    key="ce_st_tgt",
+                    format_func=lambda x: "Self + Target" if x == "all" else x.capitalize()
+                )
 
                 script_payload = {
                     "script_id": "apply_status",
@@ -74,6 +79,15 @@ def render_editor_page():
                         "target": s_tgt
                     }
                 }
+        elif ce_type == "Steal Status":
+            st_name = ce_col3.selectbox("Status to Steal", ["smoke", "strength", "charge"], key="ce_steal_st")
+
+            script_payload = {
+                "script_id": "steal_status",
+                "params": {
+                    "status": st_name
+                }
+            }
 
         if script_payload:
             # Можно добавлять несколько, но пока для простоты один
@@ -91,6 +105,8 @@ def render_editor_page():
     # Используем tabs для кубиков, чтобы не загромождать экран
     tabs = st.tabs([f"Dice {i + 1}" for i in range(num_dice)])
 
+    # ui/editor.py
+
     for i, tab in enumerate(tabs):
         with tab:
             d_col1, d_col2, d_col3 = st.columns([1, 1, 1])
@@ -99,16 +115,19 @@ def render_editor_page():
             d_min = d_col2.number_input("Min", 1, 50, 3, key=f"d_min_{i}")
             d_max = d_col3.number_input("Max", 1, 50, 7, key=f"d_max_{i}")
 
-            # Настройка скриптов КУБИКА
             st.caption("Эффект при попадании/победе (Optional)")
-            de_type = st.selectbox("Эффект кубика", ["None", "Apply Status", "Restore HP"], key=f"de_type_{i}")
+            de_type = st.selectbox("Эффект кубика", ["None", "Apply Status", "Restore HP", "Steal Status", "Multiply Status", "Custom Damage"],
+                                   key=f"de_type_{i}")
 
             d_scripts = {}
+            dice_payload = {}
+
+            # === ИСПРАВЛЕНИЕ: Инициализируем переменную заранее ===
+            d_min_roll = 0
+            # ======================================================
 
             if de_type != "None":
                 de_trig = st.selectbox("Условие", ["on_hit", "on_clash_win", "on_clash_lose"], key=f"de_trig_{i}")
-
-                dice_payload = {}
 
                 if de_type == "Restore HP":
                     damt = st.number_input("Heal Amount", 1, 20, 2, key=f"de_h_amt_{i}")
@@ -121,6 +140,9 @@ def render_editor_page():
                     ds1, ds2 = st.columns(2)
                     d_s_name = ds1.selectbox("Статус", available_statuses, key=f"de_s_name_{i}")
                     d_s_amt = ds2.number_input("Stack", 1, 20, 1, key=f"de_s_amt_{i}")
+
+                    d_min_roll = st.number_input("Мин. бросок", 0, 50, 0, key=f"de_min_roll_{i}")
+
                     d_tgt = st.radio("Цель", ["target", "self"], horizontal=True, key=f"de_tgt_{i}")
 
                     dice_payload = {
@@ -134,10 +156,58 @@ def render_editor_page():
                         }
                     }
 
+                elif de_type == "Steal Status":
+                    st_steal = st.selectbox("Status to Steal", ["smoke", "strength", "charge"], key=f"de_steal_{i}")
+                    d_min_roll = st.number_input("Мин. бросок", 0, 50, 0, key=f"de_min_roll_steal_{i}")
+
+                    dice_payload = {
+                        "script_id": "steal_status",
+                        "params": {
+                            "status": st_steal
+                        }
+                    }
+                elif de_type == "Multiply Status":
+                    st_mult_name = st.selectbox("Status", ["smoke", "bleed", "burn"], key=f"de_mul_n_{i}")
+                    st_mult_val = st.number_input("Multiplier", 1.5, 4.0, 2.0, step=0.5, key=f"de_mul_v_{i}")
+                    st_mult_tgt = st.radio("Target", ["target", "self"], horizontal=True, key=f"de_mul_t_{i}")
+
+                    dice_payload = {
+                        "script_id": "multiply_status",
+                        "params": {
+                            "status": st_mult_name,
+                            "multiplier": st_mult_val,
+                            "target": st_mult_tgt
+                        }
+                    }
+
+                elif de_type == "Custom Damage":
+                    c_dmg_type = st.selectbox("Damage Type", ["stagger", "hp"], key=f"de_cd_t_{i}")
+                    c_scale = st.number_input("Scale (Multiplier)", 0.0, 10.0, 1.0, step=0.5, key=f"de_cd_s_{i}",
+                                              help="Множитель урона от значения кубика")
+                    c_tgt = st.selectbox("Target", ["target", "self", "all"], key=f"de_cd_tg_{i}")
+                    c_prevent = st.checkbox("Prevent Normal Dmg", value=True, key=f"de_cd_p_{i}",
+                                            help="Если включено, обычный урон по HP наноситься не будет")
+
+                    dice_payload = {
+                        "script_id": "deal_custom_damage",
+                        "params": {
+                            "type": c_dmg_type,
+                            "scale": c_scale,
+                            "target": c_tgt,
+                            "prevent_standard": c_prevent
+                        }
+                    }
+
+                # Безопасное добавление min_roll
+                if dice_payload and d_min_roll > 0:
+                    if "params" not in dice_payload:
+                        dice_payload["params"] = {}
+                    dice_payload["params"]["min_roll"] = int(d_min_roll)
+
                 if dice_payload:
                     d_scripts[de_trig] = [dice_payload]
 
-            # Конвертация типа
+            # Конвертация типа (остальной код без изменений)
             type_enum = DiceType.SLASH
             if dtype_str == "Pierce":
                 type_enum = DiceType.PIERCE

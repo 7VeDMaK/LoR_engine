@@ -317,6 +317,353 @@
           "scripts": {}
         }
       ]
+    },
+    {
+      "id": "прелюдия_7cc0",
+      "name": "Прелюдия",
+      "tier": 1,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {
+        "on_use": [
+          {
+            "script_id": "apply_status",
+            "params": {
+              "status": "smoke",
+              "stack": 2,
+              "duration": 10,
+              "delay": 0,
+              "target": "all"
+            }
+          }
+        ]
+      },
+      "dice": [
+        {
+          "type": "blunt",
+          "base_min": 3,
+          "base_max": 3,
+          "scripts": {}
+        },
+        {
+          "type": "blunt",
+          "base_min": 2,
+          "base_max": 4,
+          "scripts": {}
+        }
+      ]
+    },
+    {
+      "id": "затяг_042a",
+      "name": "Затяг",
+      "tier": 1,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {
+        "on_use": [
+          {
+            "script_id": "steal_status",
+            "params": {
+              "status": "smoke"
+            }
+          }
+        ]
+      },
+      "dice": [
+        {
+          "type": "slash",
+          "base_min": 3,
+          "base_max": 6,
+          "scripts": {}
+        }
+      ]
+    },
+    {
+      "id": "вредная_привычка_dcf5",
+      "name": "Вредная привычка",
+      "tier": 2,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {},
+      "dice": [
+        {
+          "type": "evade",
+          "base_min": 4,
+          "base_max": 5,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "smoke",
+                  "stack": 2,
+                  "duration": 1,
+                  "delay": 0,
+                  "target": "self"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "evade",
+          "base_min": 4,
+          "base_max": 5,
+          "scripts": {
+            "on_clash_win": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "smoke",
+                  "stack": 2,
+                  "duration": 1,
+                  "delay": 0,
+                  "target": "self"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "slash",
+          "base_min": 1,
+          "base_max": 2,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "smoke",
+                  "stack": 3,
+                  "duration": 1,
+                  "delay": 0,
+                  "target": "target",
+                  "min_roll": 2
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "подножка_c811",
+      "name": "Подножка",
+      "tier": 2,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {},
+      "dice": [
+        {
+          "type": "blunt",
+          "base_min": 4,
+          "base_max": 6,
+          "scripts": {
+            "on_clash_win": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "smoke",
+                  "stack": 3,
+                  "duration": 1,
+                  "delay": 0,
+                  "target": "target"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "evade",
+          "base_min": 5,
+          "base_max": 7,
+          "scripts": {}
+        }
+      ]
+    },
+    {
+      "id": "вдох-выдох_0cce",
+      "name": "Вдох-выдох",
+      "tier": 2,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {
+        "on_use": [
+          {
+            "script_id": "apply_status",
+            "params": {
+              "status": "smoke",
+              "stack": 3,
+              "duration": 10,
+              "delay": 0,
+              "target": "self"
+            }
+          }
+        ]
+      },
+      "dice": [
+        {
+          "type": "blunt",
+          "base_min": 4,
+          "base_max": 6,
+          "scripts": {}
+        },
+        {
+          "type": "slash",
+          "base_min": 4,
+          "base_max": 6,
+          "scripts": {}
+        }
+      ]
+    },
+    {
+      "id": "дымные_искусства_c804",
+      "name": "Дымные искусства",
+      "tier": 3,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {},
+      "dice": [
+        {
+          "type": "blunt",
+          "base_min": 4,
+          "base_max": 6,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "smoke",
+                  "stack": 2,
+                  "duration": 1,
+                  "delay": 0,
+                  "target": "target"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "blunt",
+          "base_min": 4,
+          "base_max": 6,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "smoke",
+                  "stack": 2,
+                  "duration": 1,
+                  "delay": 0,
+                  "target": "target"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "blunt",
+          "base_min": 3,
+          "base_max": 6,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "smoke",
+                  "stack": 2,
+                  "duration": 1,
+                  "delay": 0,
+                  "target": "target"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "дымный_силуэт_c2e9",
+      "name": "Дымный силуэт",
+      "tier": 3,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {},
+      "dice": [
+        {
+          "type": "slash",
+          "base_min": 4,
+          "base_max": 6,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "multiply_status",
+                "params": {
+                  "status": "smoke",
+                  "multiplier": 2.0,
+                  "target": "target"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "evade",
+          "base_min": 5,
+          "base_max": 7,
+          "scripts": {
+            "on_clash_win": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "smoke",
+                  "stack": 3,
+                  "duration": 1,
+                  "delay": 0,
+                  "target": "self"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "крик_демона_5d94",
+      "name": "Крик Демона",
+      "tier": 3,
+      "type": "ranged",
+      "description": "Массовая атака\nНаносит урон всем на поле боя (включая союзников и самого себя) ",
+      "flags": [],
+      "scripts": {},
+      "dice": [
+        {
+          "type": "blunt",
+          "base_min": 5,
+          "base_max": 10,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "deal_custom_damage",
+                "params": {
+                  "type": "stagger",
+                  "scale": 2.0,
+                  "target": "all",
+                  "prevent_standard": true
+                }
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }
