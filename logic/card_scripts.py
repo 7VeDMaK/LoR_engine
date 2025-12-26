@@ -32,10 +32,25 @@ def apply_status(context: 'RollContext', params: dict):
 def restore_hp(context: 'RollContext', params: dict):
     amount = params.get("amount", 0)
     target_type = params.get("target", "self")
-    unit = context.source if target_type == "self" else context.target
-    if unit:
-        actual_heal = unit.heal_hp(amount)
-        context.log.append(f"💚 Healed {actual_heal} HP ({unit.name})")
+
+    # Определяем цель лечения
+    unit_to_heal = context.source if target_type == "self" else context.target
+
+    # Определяем ИСТОЧНИК лечения
+    healer = context.source
+
+    if unit_to_heal:
+        # Передаем healer в метод heal_hp
+        actual_heal = unit_to_heal.heal_hp(amount, source_unit=healer)
+
+        msg = f"💚 {healer.name} healed {actual_heal} HP ({unit_to_heal.name})"
+
+        # Если хил был порезан пассивкой (видим, что полечило меньше, чем amount, хотя нет дебаффов)
+        # Это грубая проверка, но для лога сойдет
+        if actual_heal < amount and "daughter_of_backstreets" in unit_to_heal.passives and healer != unit_to_heal:
+            msg += " (Reduced by Passive)"
+
+        context.log.append(msg)
 
 
 SCRIPTS_REGISTRY = {

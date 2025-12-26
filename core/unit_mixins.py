@@ -122,8 +122,20 @@ class UnitLifecycleMixin:
     Управление ресурсами (HP, SP) и временем (кулдауны).
     """
 
-    def heal_hp(self, amount: int) -> int:
+    def heal_hp(self, amount: int, source_unit=None) -> int:
+        """
+        Восстанавливает HP.
+        source_unit: кто лечит (None или self = самолечение).
+        """
         eff = 1.0 + self.modifiers.get("heal_efficiency", 0.0)
+
+        # --- ЛОГИКА "ДОЧЬ ПЕРЕУЛКА" ---
+        # Если лечит КТО-ТО ДРУГОЙ, эффективность режется
+        if source_unit and source_unit != self:
+            if "daughter_of_backstreets" in self.passives:
+                eff *= 0.5
+                # (Опционально можно добавить лог, но mixin не имеет доступа к логгеру боя)
+
         final_amt = int(amount * eff)
 
         # Deep Wound режет хил
@@ -131,26 +143,20 @@ class UnitLifecycleMixin:
             final_amt = int(final_amt * 0.75)
             self.remove_status("deep_wound", 1)
 
+        old_hp = self.current_hp
         self.current_hp = min(self.max_hp, self.current_hp + final_amt)
-        return final_amt
+        return self.current_hp - old_hp
 
     def take_sanity_damage(self, amount: int):
         self.current_sp = max(-45, self.current_sp - amount)
 
     def tick_cooldowns(self):
-        """Обновление таймеров способностей и баффов в конце раунда."""
-        # 1. Кулдауны способностей
         for k in list(self.cooldowns.keys()):
             self.cooldowns[k] -= 1
-            if self.cooldowns[k] <= 0:
-                del self.cooldowns[k]
+            if self.cooldowns[k] <= 0: del self.cooldowns[k]
 
-        # 2. Длительность активных баффов (Ярость и т.д.)
         for k in list(self.active_buffs.keys()):
             self.active_buffs[k] -= 1
-            if self.active_buffs[k] <= 0:
-                del self.active_buffs[k]
+            if self.active_buffs[k] <= 0: del self.active_buffs[k]
 
-        # 3. Если умер — все баффы спадают
-        if self.is_dead():
-            self.active_buffs.clear()
+        if self.is_dead(): self.active_buffs.clear()
