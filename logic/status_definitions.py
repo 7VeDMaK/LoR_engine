@@ -96,33 +96,48 @@ class SelfControlStatus(StatusEffect):
 
 
 # ==========================================
-# SMOKE (ДЫМ)
+# SMOKE (ДЫМ) - ОБНОВЛЕННЫЙ
 # ==========================================
 class SmokeStatus(StatusEffect):
     id = "smoke"
 
+    def _get_limit(self, unit):
+        # Базовый лимит 10. Если есть бонус в памяти (от тату), добавляем его.
+        bonus = unit.memory.get("smoke_limit_bonus", 0)
+        return 10 + bonus
+
     def on_roll(self, ctx: RollContext, stack: int):
-        # Если 9 или больше стаков -> все дайсы получают +1 силы
-        # Ограничиваем эффективные стаки до 10, но условие >= 9 работает и при 20
+        # Базовый эффект: +1 силы при 9+ стаках
         if stack >= 9:
-            ctx.modify_power(1, "Smoke")
+            ctx.modify_power(1, "Smoke (Base)")
 
     def get_damage_modifier(self, unit, stack) -> float:
-        # Ограничиваем максимум 10 стаков для расчета процентов
+        # Урон скейлится только до 10 стаков (стандартное правило), даже если лимит выше
         eff_stack = min(10, stack)
 
-        # Проверяем наличие таланта 6.1
         if "hiding_in_smoke" in unit.talents:
-            # С талантом: -3% входящего урона за стак (макс -30%)
-            return -(eff_stack * 0.03)
+            return -(eff_stack * 0.03)  # -30% max
         else:
-            # Без таланта: +5% входящего урона за стак (макс +50%)
-            return eff_stack * 0.05
+            return eff_stack * 0.05  # +50% max
 
     def on_turn_end(self, unit, stack) -> list[str]:
-        # Теряет 1 стак в конце сцены
+        msgs = []
+
+        # 1. Естественный спад (-1)
         unit.remove_status("smoke", 1)
-        return ["💨 Smoke decayed (-1)"]
+        msgs.append("💨 Smoke decayed (-1)")
+
+        # 2. Проверка лимита (Hard Cap)
+        # Получаем актуальное количество после спада
+        current = unit.get_status("smoke")
+        limit = self._get_limit(unit)
+
+        if current > limit:
+            loss = current - limit
+            unit.remove_status("smoke", loss)
+            msgs.append(f"💨 Smoke cap ({limit}) exceeded. Removed {loss}.")
+
+        return msgs
 
 STATUS_REGISTRY = {
     "strength": StrengthStatus(),

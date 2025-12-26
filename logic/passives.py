@@ -138,10 +138,37 @@ class PassiveHedonism(BasePassive):
     description = "Не позволяет сбрасывать ваши атаки при разнице скорости 8+. (Но вы все равно деретесь с Помехой)."
 
 
+# ==========================================
+# Тату "Благословение Ветра" (Blessing of Wind)
+# ==========================================
+class PassiveBlessingOfWind(BasePassive):
+    id = "blessing_of_wind"
+    name = "Тату 'Благословение Ветра'"
+    description = "Пассивно: +1 к Атаке и Уклонению за каждые 5 Дыма. Лимит Дыма увеличен на 5."
+
+    def on_combat_start(self, unit, log_func):
+        # Увеличиваем лимит дыма в памяти юнита. SmokeStatus это увидит.
+        unit.memory['smoke_limit_bonus'] = 5
+        if log_func: log_func(f"🌬️ **{self.name}**: Лимит дыма увеличен до 15")
+
+    def on_roll(self, ctx: RollContext):
+        smoke = ctx.source.get_status("smoke")
+        # Если дыма меньше 5, бонуса нет
+        if smoke < 5: return
+
+        # Бонус: 1 за 5, 2 за 10, 3 за 15, 4 за 20, 5 за 25
+        bonus = smoke // 5
+
+        # Работает только на Атакующие кубики и Уклонение
+        # (Slash, Pierce, Blunt, Evade)
+        if ctx.dice.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT, DiceType.EVADE]:
+            ctx.modify_power(bonus, f"Blessing ({smoke})")
+
 # === РЕГИСТРАЦИЯ ===
 PASSIVE_REGISTRY = {
     "hedonism": PassiveHedonism(),
     "wag_tail": PassiveWagTail(),
     "backstreet_demon": PassiveBackstreetDemon(),
     "daughter_of_backstreets": PassiveDaughterOfBackstreets(),
+    "blessing_of_wind": PassiveBlessingOfWind(),
 }
