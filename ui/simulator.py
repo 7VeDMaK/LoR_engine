@@ -84,8 +84,6 @@ def execute_combat():
 
     # --- ИСПРАВЛЕННАЯ ЛОГИКА ВОССТАНОВЛЕНИЯ ---
     # Мы восстанавливаем стаггер ТОЛЬКО если юнит провел ЭТОТ ход в состоянии оглушения.
-    # То есть, если в его слотах есть метка 'stunned'.
-
     if p1.active_slots and p1.active_slots[0].get('stunned'):
         p1.current_stagger = p1.max_stagger
         msg.append(f"✨ {p1.name} recovered from Stagger!")
@@ -109,6 +107,9 @@ def execute_combat():
 
         status_logs = StatusManager.process_turn_end(unit)
         logs.extend(status_logs)
+
+        # === ОБНОВЛЕНИЕ КУЛДАУНОВ ===
+        unit.tick_cooldowns()
 
         if logs:
             st.session_state['battle_logs'].append(
@@ -134,6 +135,9 @@ def reset_game():
             u.delayed_queue = []
             u.memory = {}
             u.active_slots = []
+            # Сброс кулдаунов
+            u.cooldowns = {}
+            u.active_buffs = {}
 
     st.session_state['battle_logs'] = []
     st.session_state['script_logs'] = ""
@@ -201,7 +205,13 @@ def render_slot_strip(unit: Unit, opponent: Unit, slot_idx: int, key_prefix: str
     ui_stat = slot.get('ui_status', {"text": "...", "icon": "", "color": "gray"})
     selected_card = slot.get('card')
     card_name = f"🃏 {selected_card.name}" if selected_card else "⚠️ No Page"
-    label = f"S{slot_idx + 1} (🎲{speed}) | {ui_stat['icon']} {ui_stat['text']} | {card_name}"
+
+    # Отображение источника бонуса (Ярость)
+    spd_label = f"🎲{speed}"
+    if slot.get("source_effect"):
+        spd_label += f" ({slot.get('source_effect')})"
+
+    label = f"S{slot_idx + 1} ({spd_label}) | {ui_stat['icon']} {ui_stat['text']} | {card_name}"
 
     with st.expander(label, expanded=False):
         c_tgt, c_sel, c_aggro = st.columns([1.5, 2, 0.5])
@@ -279,6 +289,51 @@ def render_slot_strip(unit: Unit, opponent: Unit, slot_idx: int, key_prefix: str
                     st.caption(f"• {line}")
 
 
+def render_active_abilities(unit, unit_key):
+    """Рендерит кнопки для активных способностей юнита."""
+    all_passives = unit.passives + unit.talents
+    has_actives = False
+
+    # Контейнер для кнопок, чтобы они шли в ряд или сеткой
+    # Здесь просто перебираем
+    for pid in all_passives:
+        if pid in PASSIVE_REGISTRY:
+            passive_obj = PASSIVE_REGISTRY[pid]
+            # Проверяем флаг
+            if getattr(passive_obj, "is_active_ability", False):
+                has_actives = True
+
+                cd = unit.cooldowns.get(pid, 0)
+                active_dur = unit.active_buffs.get(pid, 0)
+
+                # Состояние кнопки
+                if active_dur > 0:
+                    label = f"🔥 {passive_obj.name} (Active: {active_dur})"
+                    disabled = True
+                    help_txt = f"Действует еще {active_dur} раунда"
+                elif cd > 0:
+                    label = f"⏳ {passive_obj.name} (CD: {cd})"
+                    disabled = True
+                    help_txt = f"Перезарядка {cd} раунда"
+                else:
+                    label = f"✨ Activate {passive_obj.name}"
+                    disabled = False
+                    help_txt = passive_obj.description
+
+                if st.button(label, key=f"act_{unit_key}_{pid}", disabled=disabled, use_container_width=True,
+                             help=help_txt):
+                    # Логика активации
+                    def log_f(msg):
+                        st.session_state.get('battle_logs', []).append(
+                            {"round": "Skill", "rolls": "Activate", "details": msg})
+
+                    if passive_obj.activate(unit, log_f):
+                        st.rerun()
+
+    if has_actives:
+        st.caption("Active Abilities")
+
+
 def render_simulator_page():
     if 'phase' not in st.session_state:
         st.session_state['phase'] = 'roll'
@@ -333,6 +388,16 @@ def render_simulator_page():
             img = p2.avatar if p2.avatar and os.path.exists(p2.avatar) else "https://placehold.co/150x150/png?text=P2"
             st.image(img, use_container_width=True)
         render_combat_info(p2)
+
+    # === БЛОК АКТИВНЫХ СПОСОБНОСТЕЙ ===
+    # Показываем кнопки только в фазе броска, чтобы не ломать логику боя
+    if st.session_state['phase'] == 'roll':
+        st.divider()
+        ab_c1, ab_c2 = st.columns(2, gap="medium")
+        with ab_c1:
+            render_active_abilities(p1, "p1")
+        with ab_c2:
+            render_active_abilities(p2, "p2")
 
     st.divider()
 

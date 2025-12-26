@@ -8,6 +8,11 @@ class BasePassive:
     name = "Base Passive"
     description = "No description"
 
+    # Флаги для активных способностей
+    is_active_ability = False
+    cooldown = 0
+    duration = 0
+
     # Хуки событий
     def on_combat_start(self, unit, log_func): pass
 
@@ -24,6 +29,9 @@ class BasePassive:
     def on_clash_lose(self, ctx: RollContext): pass
 
     def on_hit(self, ctx: RollContext): pass
+
+    # Новый метод для кнопки активации
+    def activate(self, unit, log_func): pass
 
 
 # ==========================================
@@ -61,19 +69,13 @@ class TalentVengefulPayback(BasePassive):
         mem_key = f"{self.id}_chunks"
         previous_chunks = unit.memory.get(mem_key, 0)
 
-        # 3. Разница (новые потери здоровья)
-        # В оригинале: "За каждые 10 хп... срабатывает 1 раз".
-        # Значит, если здоровье упало с 100 до 80, мы получаем 2 силы.
-        # Если потом вылечились и снова упали, сработает ли снова? Обычно в таких системах считают пороги.
-        # Реализуем так: если текущее кол-во чанков больше предыдущего -> даем бафф
-
         if chunks > previous_chunks:
             diff = chunks - previous_chunks
             unit.add_status("strength", diff, duration=2)  # Duration 2, чтобы хватило на некст раунд
             if log_func:
                 log_func(f"🩸 {self.name}: Потеряно здоровья (стаков: {diff}). +{diff} Силы.")
 
-        # Обновляем память (если вылечились, chunks уменьшится, и мы сможем получить бонус снова при получении урона)
+        # Обновляем память
         unit.memory[mem_key] = chunks
 
 
@@ -83,15 +85,24 @@ class TalentVengefulPayback(BasePassive):
 class TalentBerserkerRage(BasePassive):
     id = "berserker_rage"
     name = "Ярость"
-    description = "5.3 Активно: Входите в ярость на 3 раунда. (Здесь: Авто-активация при старте). Дает мощь и скорость."
+    description = "5.3 Активно: Входите в ярость на 3 раунда (+1 Слот Атаки). КД 5 ходов. Спадает при потере сознания."
 
-    def on_combat_start(self, unit, log_func):
-        # В симуляторе нет кнопок "Активно", поэтому активируем при старте боя
-        # Или можно сделать шанс. Сделаем 100% при старте для теста.
-        unit.add_status("strength", 1, duration=3)
-        unit.add_status("haste", 2, duration=3)  # Скорость
+    is_active_ability = True
+    cooldown = 5
+    duration = 3
+
+    def activate(self, unit, log_func):
+        # Проверка КД
+        if unit.cooldowns.get(self.id, 0) > 0:
+            return False
+
+        # Активация
+        unit.active_buffs[self.id] = self.duration
+        unit.cooldowns[self.id] = self.cooldown
+
         if log_func:
-            log_func(f"😡 {self.name}: Активирована! (+Сила, +Скорость на 3 хода)")
+            log_func(f"😡 {self.name}: Активирована! (+1 Куб Атаки на 3 раунда)")
+        return True
 
 
 # ==========================================
@@ -112,10 +123,6 @@ class TalentCalmMind(BasePassive):
 
 # --- РЕЕСТР (Все доступные пассивки должны быть здесь) ---
 PASSIVE_REGISTRY = {
-    # Старые (из примера)
-    "lone_fixer": BasePassive(),  # Заглушка, если нужна
-
-    # Берсерк (из картинки)
     "naked_defense": TalentNakedDefense(),
     "vengeful_payback": TalentVengefulPayback(),
     "berserker_rage": TalentBerserkerRage(),

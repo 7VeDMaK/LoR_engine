@@ -45,6 +45,12 @@ class Unit(UnitStatusMixin):
     computed_speed_dice: List[Tuple[int, int]] = field(default_factory=list)
     active_slots: List[Dict] = field(default_factory=list)
 
+    # === НОВЫЕ ПОЛЯ (ОТСЛЕЖИВАНИЕ АКТИВОК) ===
+    # Словарь: { "ability_id": remaining_turns }
+    cooldowns: Dict[str, int] = field(default_factory=dict)
+    # Словарь: { "buff_id": remaining_turns }
+    active_buffs: Dict[str, int] = field(default_factory=dict)
+
     # === БРОНЯ ===
     armor_name: str = "Standard Fixer Suit"
     armor_type: str = "Medium"
@@ -77,7 +83,6 @@ class Unit(UnitStatusMixin):
     memory: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self):
-        # Сериализация перенесена сюда для удобства, но логика статусов убрана в миксин
         return {
             "name": self.name, "level": self.level, "rank": self.rank, "avatar": self.avatar,
             "base_intellect": self.base_intellect,
@@ -88,7 +93,10 @@ class Unit(UnitStatusMixin):
             "defense": {"armor_name": self.armor_name, "armor_type": self.armor_type,
                         "hp_resists": self.hp_resists.to_dict(), "stagger_resists": self.stagger_resists.to_dict()},
             "attributes": self.attributes, "skills": self.skills, "passives": self.passives, "talents": self.talents,
-            "level_rolls": self.level_rolls
+            "level_rolls": self.level_rolls,
+            # Сохраняем кулдауны и баффы
+            "cooldowns": self.cooldowns,
+            "active_buffs": self.active_buffs
         }
 
     @classmethod
@@ -124,6 +132,10 @@ class Unit(UnitStatusMixin):
         u.talents = data.get("talents", [])
         u.level_rolls = data.get("level_rolls", {})
 
+        # Загружаем кулдауны и баффы
+        u.cooldowns = data.get("cooldowns", {})
+        u.active_buffs = data.get("active_buffs", {})
+
         u.recalculate_stats()
         return u
 
@@ -134,6 +146,12 @@ class Unit(UnitStatusMixin):
     # === БОЕВАЯ ЛОГИКА ===
     def roll_speed_dice(self):
         self.active_slots = []
+
+        # Если персонаж мертв, слоты не генерируются
+        if self.is_dead():
+            return
+
+        # 1. Стандартные кубики
         for (d_min, d_max) in self.computed_speed_dice:
             mod = self.get_status("haste") - self.get_status("slow") - self.get_status("bind")
             val = random.randint(d_min, d_max) + mod
@@ -145,6 +163,48 @@ class Unit(UnitStatusMixin):
                 'target_slot': None,
                 'is_aggro': False
             })
+
+        # 2. ЛОГИКА АКТИВНЫХ БАФФОВ (ЯРОСТЬ)
+        # Если активен бафф "berserker_rage", добавляем дополнительный слот
+        if self.active_buffs.get("berserker_rage", 0) > 0:
+            # === ИЗМЕНЕНИЕ ЗДЕСЬ ===
+            # Копируем параметры (разброс) ПЕРВОГО кубика из списка
+            if self.computed_speed_dice:
+                d_min, d_max = self.computed_speed_dice[0]
+            else:
+                # На случай, если список пуст (что странно для живого юнита), берем базу
+                d_min, d_max = self.base_speed_min, self.base_speed_max
+
+            mod = self.get_status("haste") - self.get_status("slow") - self.get_status("bind")
+
+            val = random.randint(d_min, d_max) + mod
+            val = max(1, val)
+
+            self.active_slots.append({
+                'speed': val,
+                'card': None,
+                'target_slot': None,
+                'is_aggro': False,
+                'source_effect': 'Rage 😡'  # Метка для UI
+            })
+
+    def tick_cooldowns(self):
+        """Вызывается в конце раунда: уменьшает КД и длительность баффов"""
+        # Уменьшаем КД способностей
+        for k in list(self.cooldowns.keys()):
+            self.cooldowns[k] -= 1
+            if self.cooldowns[k] <= 0:
+                del self.cooldowns[k]
+
+        # Уменьшаем длительность активных баффов
+        for k in list(self.active_buffs.keys()):
+            self.active_buffs[k] -= 1
+            if self.active_buffs[k] <= 0:
+                del self.active_buffs[k]
+
+        # Если юнит умер, сбрасываем баффы (Ярость спадает при потере сознания)
+        if self.is_dead():
+            self.active_buffs.clear()
 
     def is_staggered(self):
         return self.current_stagger <= 0
