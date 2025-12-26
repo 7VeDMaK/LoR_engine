@@ -36,6 +36,15 @@ class StrengthStatus(StatusEffect):
         if ctx.dice.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]:
             ctx.modify_power(stack, "Strength")
 
+# === НОВЫЙ СТАТУС: СТОЙКОСТЬ (ENDURANCE) ===
+class EnduranceStatus(StatusEffect):
+    id = "endurance"
+
+    def on_roll(self, ctx: RollContext, stack: int):
+        # Дает силу только БЛОКУ
+        if ctx.dice.dtype == DiceType.BLOCK:
+            ctx.modify_power(stack, "Endurance")
+
 
 class BleedStatus(StatusEffect):
     id = "bleed"
@@ -118,7 +127,8 @@ class SmokeStatus(StatusEffect):
 STATUS_REGISTRY = {
     "strength": StrengthStatus(),
     "bleed": BleedStatus(),
+    "endurance": EnduranceStatus(),
     "paralysis": ParalysisStatus(),
     "self_control": SelfControlStatus(),
-"smoke": SmokeStatus(),
+    "smoke": SmokeStatus(),
 }

@@ -4,7 +4,8 @@ from logic.talents.definitions import (
     TalentVengefulPayback,
     TalentBerserkerRage,
     TalentCalmMind,
-TalentHidingInSmoke
+    TalentHidingInSmoke,
+    TalentSmokeUniversality
 )
 
 TALENT_REGISTRY = {
@@ -12,5 +13,6 @@ TALENT_REGISTRY = {
     "vengeful_payback": TalentVengefulPayback(),
     "berserker_rage": TalentBerserkerRage(),
     "calm_mind": TalentCalmMind(),
-"hiding_in_smoke": TalentHidingInSmoke(),
+    "hiding_in_smoke": TalentHidingInSmoke(),
+    "smoke_universality": TalentSmokeUniversality(),
 }

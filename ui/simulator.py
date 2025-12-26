@@ -293,29 +293,56 @@ def render_active_abilities(unit, unit_key):
         if pid in TALENT_REGISTRY: abilities.append((pid, TALENT_REGISTRY[pid]))
 
     has_actives = False
-    for pid, passive_obj in abilities:
-        if getattr(passive_obj, "is_active_ability", False):
+    for pid, obj in abilities:
+        if getattr(obj, "is_active_ability", False):
             has_actives = True
-            cd = unit.cooldowns.get(pid, 0)
-            active_dur = unit.active_buffs.get(pid, 0)
 
-            if active_dur > 0:
-                label = f"🔥 {passive_obj.name} (Active: {active_dur})"
-                disabled = True
-            elif cd > 0:
-                label = f"⏳ {passive_obj.name} (CD: {cd})"
-                disabled = True
-            else:
-                label = f"✨ Activate {passive_obj.name}"
+            # Контейнер для одной способности
+            with st.container(border=True):
+                cd = unit.cooldowns.get(pid, 0)
+                active_dur = unit.active_buffs.get(pid, 0)
+
+                # Проверяем, есть ли опции выбора (как у Smoke Universality)
+                options = getattr(obj, "conversion_options", None)
+                selected_opt = None
+
+                # Заголовок
+                st.markdown(f"**{obj.name}**")
+
+                if options:
+                    # Рисуем выбор
+                    selected_opt = st.selectbox(
+                        "Effect",
+                        options.keys(),
+                        key=f"sel_{unit_key}_{pid}",
+                        label_visibility="collapsed"
+                    )
+
+                # Кнопка активации
+                btn_label = "Activate"
                 disabled = False
 
-            if st.button(label, key=f"act_{unit_key}_{pid}", disabled=disabled):
-                def log_f(msg):
-                    st.session_state.get('battle_logs', []).append(
-                        {"round": "Skill", "rolls": "Activate", "details": msg})
+                if active_dur > 0:
+                    btn_label = f"Active ({active_dur})"
+                    disabled = True
+                elif cd > 0:
+                    btn_label = f"Cooldown ({cd})"
+                    disabled = True
 
-                if passive_obj.activate(unit, log_f):
-                    st.rerun()
+                if st.button(f"✨ {btn_label}", key=f"act_{unit_key}_{pid}", disabled=disabled,
+                             use_container_width=True):
+                    def log_f(msg):
+                        st.session_state.get('battle_logs', []).append(
+                            {"round": "Skill", "rolls": "Activate", "details": msg})
+
+                    # Если была выбрана опция, передаем её в activate
+                    if options:
+                        if obj.activate(unit, log_f, choice_key=selected_opt):
+                            st.rerun()
+                    else:
+                        # Обычная активация без параметров
+                        if obj.activate(unit, log_f):
+                            st.rerun()
 
     if has_actives: st.caption("Active Abilities")
 
