@@ -23,6 +23,11 @@ class StatusEffect:
 
     def on_turn_end(self, unit, stack) -> list[str]: return []
 
+    # === НОВЫЙ МЕТОД ДЛЯ МОДИФИКАТОРОВ УРОНА ===
+    def get_damage_modifier(self, unit, stack) -> float:
+        """Возвращает % изменения урона (0.1 = +10%, -0.2 = -20%)"""
+        return 0.0
+
 
 class StrengthStatus(StatusEffect):
     id = "strength"
@@ -81,9 +86,39 @@ class SelfControlStatus(StatusEffect):
         return [f"💨 Self-Control decayed (-20)"]
 
 
+# ==========================================
+# SMOKE (ДЫМ)
+# ==========================================
+class SmokeStatus(StatusEffect):
+    id = "smoke"
+
+    def on_roll(self, ctx: RollContext, stack: int):
+        # Если 9 или больше стаков -> все дайсы получают +1 силы
+        # Ограничиваем эффективные стаки до 10, но условие >= 9 работает и при 20
+        if stack >= 9:
+            ctx.modify_power(1, "Smoke")
+
+    def get_damage_modifier(self, unit, stack) -> float:
+        # Ограничиваем максимум 10 стаков для расчета процентов
+        eff_stack = min(10, stack)
+
+        # Проверяем наличие таланта 6.1
+        if "hiding_in_smoke" in unit.talents:
+            # С талантом: -3% входящего урона за стак (макс -30%)
+            return -(eff_stack * 0.03)
+        else:
+            # Без таланта: +5% входящего урона за стак (макс +50%)
+            return eff_stack * 0.05
+
+    def on_turn_end(self, unit, stack) -> list[str]:
+        # Теряет 1 стак в конце сцены
+        unit.remove_status("smoke", 1)
+        return ["💨 Smoke decayed (-1)"]
+
 STATUS_REGISTRY = {
     "strength": StrengthStatus(),
     "bleed": BleedStatus(),
     "paralysis": ParalysisStatus(),
     "self_control": SelfControlStatus(),
+"smoke": SmokeStatus(),
 }

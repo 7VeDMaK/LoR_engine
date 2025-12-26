@@ -7,7 +7,77 @@ from logic.talents import TALENT_REGISTRY
 class ClashFlowMixin(ClashMechanicsMixin):
     """
     Уровень 2: Сценарии стычек (Speed Diff, Discard, Clash Loop).
+    Исправлен поиск пассивок защиты (теперь не прерывается на пустых результатах).
     """
+
+    # === ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ===
+
+    def _find_virtual_die(self, target, incoming_die):
+        """Ищет, есть ли у цели пассивка, дающая защитный кубик (Counter)."""
+        if target.is_staggered(): return None
+
+        # Проверяем все пассивки и таланты
+        for pid in target.passives + target.talents:
+            obj = PASSIVE_REGISTRY.get(pid) or TALENT_REGISTRY.get(pid)
+            if obj and hasattr(obj, "get_virtual_defense_die"):
+                # ВАЖНОЕ ИСПРАВЛЕНИЕ:
+                # Мы вызываем метод, и если он вернул None — ищем ДАЛЬШЕ.
+                # Раньше мы сразу возвращали None, прерывая цикл.
+                die = obj.get_virtual_defense_die(target, incoming_die)
+                if die:
+                    return die
+
+        return None
+
+    def _resolve_defense_clash(self, source_ctx, target, def_die):
+        """
+        Разыгрывает столкновение: Атака (Source) vs Виртуальная Защита (Def Die).
+        Возвращает: (строка лога, сохранился_ли_кубик_защиты)
+        """
+        def_ctx = self._create_roll_context(target, source_ctx.source, def_die)
+        val_atk = source_ctx.final_value
+        val_def = def_ctx.final_value
+
+        res_str = f"🛡️Auto-Def {val_def} vs ⚔️{val_atk}"
+        def_logs_str = "\n".join([f"• 🛡️ {target.name} (Auto): {l}" for l in def_ctx.log])
+
+        full_log = ""
+        surviving_die = None
+
+        if val_def > val_atk:
+            # ЗАЩИТА ПОБЕДИЛА
+            self._handle_clash_win(def_ctx)
+            self._handle_clash_lose(source_ctx)
+
+            diff = max(0, val_def - val_atk)
+            self._execute_clash_interaction(def_ctx, source_ctx, diff)
+
+            full_log = f"{res_str} | **Defended!**\n{def_logs_str}"
+
+            # Сохраняем кубик, если это Evade
+            if def_die.dtype == DiceType.EVADE:
+                surviving_die = def_die
+                full_log += "\n• 💨 Уклонение сохранилось!"
+
+        elif val_atk > val_def:
+            # ЗАЩИТА ПРОБИТА
+            self._handle_clash_win(source_ctx)
+            self._handle_clash_lose(def_ctx)
+
+            diff = max(0, val_atk - val_def)
+            self._execute_clash_interaction(source_ctx, def_ctx, diff)
+
+            full_log = f"{res_str} | **Defense Broken!**\n{def_logs_str}"
+            surviving_die = None
+
+        else:
+            # НИЧЬЯ
+            full_log = f"{res_str} | Draw\n{def_logs_str}"
+            surviving_die = None
+
+        return full_log, surviving_die
+
+    # === ОСНОВНЫЕ МЕТОДЫ ===
 
     def _resolve_card_clash(self, attacker, defender, round_label: str, is_p1_attacker: bool, slot_a: dict,
                             slot_d: dict):
@@ -27,82 +97,66 @@ class ClashFlowMixin(ClashMechanicsMixin):
         max_dice = max(len(ac.dice_list), len(dc.dice_list))
 
         for j in range(max_dice):
-            # === 1. ПРОВЕРКА СОСТОЯНИЯ ===
-            # Если кто-то умер — бой заканчивается сразу
             if attacker.is_dead() or defender.is_dead(): break
 
-            # Проверяем возможность действовать (Stagger)
-            # Если юнит в стаггере, он жив, но не может выставить кубик
-            can_act_a = not attacker.is_staggered()
-            can_act_d = not defender.is_staggered()
+            can_a = not attacker.is_staggered()
+            can_d = not defender.is_staggered()
+            if not can_a and not can_d: break
 
-            # Если ОБА в стаггере — бой прерывается (никто ничего не делает)
-            if not can_act_a and not can_act_d: break
+            die_a = ac.dice_list[j] if (j < len(ac.dice_list) and can_a) else None
+            die_d = dc.dice_list[j] if (j < len(dc.dice_list) and can_d) else None
 
-            # === 2. ПОЛУЧЕНИЕ КУБИКОВ ===
-            # Кубик берется только если юнит может действовать
-            die_a = ac.dice_list[j] if (j < len(ac.dice_list) and can_act_a) else None
-            die_d = dc.dice_list[j] if (j < len(dc.dice_list) and can_act_d) else None
-
-            # Если кубики кончились у обоих (например, у одного 2 куба, у другого 3, и 3-й ход)
             if not die_a and not die_d: break
 
-            # === 3. ЛОГИКА СКОРОСТИ (Только если есть оба кубика) ===
             dis_a = False
             dis_d = False
 
-            # Логика сброса и помехи работает только в КЛЭШЕ (когда оба могут бить)
             if die_a and die_d:
-                # 1. Сброс атаки (Атакующий быстрее на 8+)
+                # 1. Сброс (A > D + 8)
                 if spd_a >= spd_d + 8:
                     must_clash = ("hedonism" in attacker.passives) or force_a
                     if not must_clash:
                         ctx_a = self._create_roll_context(attacker, defender, die_a)
                         detail = f"🚫 **Сброс Атаки!** (Spd {spd_a} vs {spd_d})\n"
                         detail += self._resolve_unopposed(ctx_a, defender)
-                        if ctx_a.log:
-                            detail += "\n" + "\n".join([f"• ⚔️ {attacker.name}: {l}" for l in ctx_a.log])
+                        if ctx_a.log: detail += "\n" + "\n".join([f"• ⚔️ {attacker.name}: {l}" for l in ctx_a.log])
                         report.append({"round": f"{round_label} (D{j + 1})", "rolls": f"{ctx_a.final_value} vs ❌",
                                        "details": detail})
                         continue
 
-                # 2. Сброс атаки (Защитник быстрее на 8+)
+                # 2. Сброс (D > A + 8)
                 if spd_d >= spd_a + 8:
                     must_clash = ("hedonism" in defender.passives) or force_d
                     if not must_clash:
                         ctx_d = self._create_roll_context(defender, attacker, die_d)
                         detail = f"🚫 **Сброс Атаки!** (Spd {spd_d} vs {spd_a})\n"
                         detail += self._resolve_unopposed(ctx_d, attacker)
-                        if ctx_d.log:
-                            detail += "\n" + "\n".join([f"• 🛡️ {defender.name}: {l}" for l in ctx_d.log])
+                        if ctx_d.log: detail += "\n" + "\n".join([f"• 🛡️ {defender.name}: {l}" for l in ctx_d.log])
                         report.append({"round": f"{round_label} (D{j + 1})", "rolls": f"❌ vs {ctx_d.final_value}",
                                        "details": detail})
                         continue
 
-                # 3. Помеха (Разница 4+)
+                # 3. Помеха (Diff 4+)
                 if spd_a >= spd_d + 4:
                     dis_d = True
                 elif spd_d >= spd_a + 4:
                     dis_a = True
 
-            # === 4. БРОСКИ ===
-            # Если кубика нет (die_a is None), контекст тоже будет None
+            # Броски
             ctx_a = self._create_roll_context(attacker, defender, die_a, is_disadvantage=dis_a)
             ctx_d = self._create_roll_context(defender, attacker, die_d, is_disadvantage=dis_d)
 
-            # Логи Гедонизма
             if die_a and die_d:
                 if (spd_a >= spd_d + 8) and (("hedonism" in attacker.passives) or force_a):
-                    ctx_a.log.append("🔒 Гедонизм/Lock: Сброс отменен!")
+                    ctx_a.log.append("🔒 Lock: Сброс отменен!")
                 if (spd_d >= spd_a + 8) and (("hedonism" in defender.passives) or force_d):
-                    ctx_d.log.append("🔒 Гедонизм/Lock: Сброс отменен!")
+                    ctx_d.log.append("🔒 Lock: Сброс отменен!")
 
             val_a = ctx_a.final_value if ctx_a else 0
             val_d = ctx_d.final_value if ctx_d else 0
             res_str = f"{val_a if is_p1_attacker else val_d} vs {val_d if is_p1_attacker else val_a}"
             detail = ""
 
-            # === 5. РЕЗОЛВ ===
             if ctx_a and ctx_d:
                 # CLASH
                 diff = abs(val_a - val_d)
@@ -119,13 +173,10 @@ class ClashFlowMixin(ClashMechanicsMixin):
                 else:
                     detail = "Draw!"
             elif ctx_a:
-                # Атакующий бьет (у защитника нет кубика или он в стаггере)
                 detail = self._resolve_unopposed(ctx_a, defender)
             elif ctx_d:
-                # Защитник бьет (у атакующего нет кубика или он в стаггере)
                 detail = self._resolve_unopposed(ctx_d, attacker)
 
-            # Форматирование логов
             round_logs = []
             if ctx_a: round_logs.extend([f"⚔️ {attacker.name}: {l}" for l in ctx_a.log])
             if ctx_d: round_logs.extend([f"🛡️ {defender.name}: {l}" for l in ctx_d.log])
@@ -136,60 +187,61 @@ class ClashFlowMixin(ClashMechanicsMixin):
         return report
 
     def _resolve_one_sided(self, source, target, round_label: str):
+        """
+        Полный цикл односторонней атаки.
+        """
         report = []
         card = source.current_card
         self._process_card_self_scripts("on_use", source, target)
 
+        # 1. ГЕНЕРАЦИЯ ЗАЩИТЫ (ОДИН РАЗ)
+        trigger_die = card.dice_list[0] if card.dice_list else None
+        active_def_die = self._find_virtual_die(target, trigger_die)
+
         for j, die in enumerate(card.dice_list):
-            # Прерываем, только если АТАКУЮЩИЙ не может действовать или ЦЕЛЬ мертва.
-            # Если ЦЕЛЬ в стаггере - мы ПРОДОЛЖАЕМ бить!
             if source.is_dead() or source.is_staggered(): break
             if target.is_dead(): break
 
             ctx = self._create_roll_context(source, target, die)
             val = ctx.final_value
-            detail = self._resolve_unopposed(ctx, target)
-            if ctx.log: detail += "\n" + "\n".join([f"• ⚔️ {source.name}: {l}" for l in ctx.log])
+            detail = ""
+
+            # 2. ИСПОЛЬЗУЕМ ЗАЩИТУ
+            if active_def_die:
+                log_res, surviving_die = self._resolve_defense_clash(ctx, target, active_def_die)
+                detail = log_res
+                active_def_die = surviving_die  # Обновляем (сохраняем или теряем)
+            else:
+                # 3. НЕТ ЗАЩИТЫ
+                if die.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]:
+                    self._apply_damage(ctx, None, "hp")
+                    detail = "Unanswered Hit"
+                else:
+                    detail = "Defensive Die (Skipped)"
+
+            if ctx.log:
+                atk_logs = "\n".join([f"• ⚔️ {source.name}: {l}" for l in ctx.log])
+                detail += "\n" + atk_logs
+
             report.append({"round": f"{round_label} (D{j + 1})", "rolls": f"{val}", "details": detail})
+
         return report
 
     def _resolve_unopposed(self, source_ctx, target):
-        virtual_die = None
-        for pid in target.passives + target.talents:
-            obj = PASSIVE_REGISTRY.get(pid) or TALENT_REGISTRY.get(pid)
-            if obj and hasattr(obj, "get_virtual_defense_die"):
-                virtual_die = obj.get_virtual_defense_die(target, source_ctx.dice)
-                if virtual_die: break
+        """
+        Разовый безответный удар.
+        """
+        def_die = self._find_virtual_die(target, source_ctx.dice)
 
-        if virtual_die:
-            def_ctx = self._create_roll_context(target, source_ctx.source, virtual_die)
-            val_atk = source_ctx.final_value
-            val_def = def_ctx.final_value
-            res_str = f"🛡️Auto-Def {val_def} vs ⚔️{val_atk}"
-
-            def_logs = "\n".join([f"• 🛡️ {target.name} (Auto): {l}" for l in def_ctx.log])
-
-            result = ""
-            if val_def > val_atk:
-                self._handle_clash_win(def_ctx)
-                self._handle_clash_lose(source_ctx)
-                diff = max(0, val_def - val_atk)
-                self._execute_clash_interaction(def_ctx, source_ctx, diff)
-                result = f"{res_str} | **Defended!**"
-            elif val_atk > val_def:
-                self._handle_clash_win(source_ctx)
-                self._handle_clash_lose(def_ctx)
-                diff = max(0, val_atk - val_def)
-                self._execute_clash_interaction(source_ctx, def_ctx, diff)
-                result = f"{res_str} | **Defense Broken!**"
-            else:
-                result = f"{res_str} | Draw"
-            return f"{result}\n{def_logs}"
+        if def_die:
+            log_res, _ = self._resolve_defense_clash(source_ctx, target, def_die)
+            return log_res
 
         if source_ctx.dice.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]:
             self._apply_damage(source_ctx, None, "hp")
             return "Unanswered Hit"
-        return "Defensive Die (Skipped)"
+        else:
+            return "Defensive Die (Skipped)"
 
     def _execute_clash_interaction(self, winner_ctx, loser_ctx, diff: int):
         interaction = self._calculate_standard_interaction(winner_ctx, loser_ctx, diff)

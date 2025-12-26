@@ -78,3 +78,11 @@ class TalentCalmMind(BasePassive):
         if current_stacks < 100:
             ctx.source.add_status("self_control", 1)
             ctx.log.append(f"💨 {self.name}: +1 Self-Control")
+
+            # ==========================================
+            # 6.1 Скрываюсь в дыму (Hiding in Smoke)
+            # ==========================================
+class TalentHidingInSmoke(BasePassive):
+    id = "hiding_in_smoke"
+    name = "Скрываюсь в дыму"
+    description = "Дым теперь повышает сопротивление урону (до 30%), а не увеличивает входящий урон."

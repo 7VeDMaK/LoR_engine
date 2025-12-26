@@ -14,28 +14,19 @@ class ClashMechanicsMixin:
     """
 
     def _dispatch_event(self, event_name: str, context: RollContext, *args):
-        """Универсальный диспетчер событий."""
         unit = context.source
-
-        # 1. Статусы
         for status_id, stack in list(unit.statuses.items()):
             if status_id in STATUS_REGISTRY:
                 handler = getattr(STATUS_REGISTRY[status_id], event_name, None)
                 if handler: handler(context, stack, *args)
-
-        # 2. Пассивки
         for pid in unit.passives:
             if pid in PASSIVE_REGISTRY:
                 handler = getattr(PASSIVE_REGISTRY[pid], event_name, None)
                 if handler: handler(context, *args)
-
-        # 3. Таланты
-        for tid in unit.talents:
-            if tid in TALENT_REGISTRY:
-                handler = getattr(TALENT_REGISTRY[tid], event_name, None)
+        for pid in unit.talents:
+            if pid in TALENT_REGISTRY:
+                handler = getattr(TALENT_REGISTRY[pid], event_name, None)
                 if handler: handler(context, *args)
-
-        # 4. Скрипты карты
         self._process_card_scripts(event_name, context)
 
     def _process_card_scripts(self, trigger: str, ctx: RollContext):
@@ -55,11 +46,8 @@ class ClashMechanicsMixin:
             params = script_data.get("params", {})
             if script_id in SCRIPTS_REGISTRY: SCRIPTS_REGISTRY[script_id](ctx, params)
 
-    # === ВОТ ЭТОТ МЕТОД ВЫЗЫВАЕТ ОШИБКУ, ЕСЛИ ОН ОТСУТСТВУЕТ ===
     def _create_roll_context(self, source, target, die: Dice, is_disadvantage: bool = False) -> RollContext:
         if not die: return None
-
-        # Логика броска (Нормальный или с Помехой)
         if is_disadvantage:
             r1 = random.randint(die.min_val, die.max_val)
             r2 = random.randint(die.min_val, die.max_val)
@@ -71,19 +59,15 @@ class ClashMechanicsMixin:
             ctx = RollContext(source=source, target=target, dice=die, final_value=roll, is_disadvantage=False)
             ctx.log.append(f"🎲 Roll [{die.min_val}-{die.max_val}]: **{roll}**")
 
-        # Бонусы
         mods = source.modifiers
-
         if die.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]:
             p_atk = mods.get("power_attack", 0)
             if p_atk: ctx.modify_power(p_atk, "Сила")
             p_skill = mods.get("power_medium", 0)
             if p_skill: ctx.modify_power(p_skill, "Навык")
-
         elif die.dtype == DiceType.BLOCK:
             p_blk = mods.get("power_block", 0)
             if p_blk: ctx.modify_power(p_blk, "Стойкость")
-
         elif die.dtype == DiceType.EVADE:
             p_evd = mods.get("power_evade", 0)
             if p_evd: ctx.modify_power(p_evd, "Ловкость")
@@ -142,13 +126,17 @@ class ClashMechanicsMixin:
             target.current_stagger -= final_dmg
             source_ctx.log.append(f"😵 **{final_dmg}** Stagger урона по {target.name}")
 
+    # === ОБНОВЛЕННЫЙ МЕТОД НАНЕСЕНИЯ УРОНА ===
     def _apply_damage(self, attacker_ctx: RollContext, defender_ctx: RollContext, dmg_type: str = "hp"):
+        """Стандартный расчет урона с учетом статусов."""
         attacker = attacker_ctx.source
         defender = attacker_ctx.target or attacker_ctx.target
 
         self._dispatch_event("on_hit", attacker_ctx)
 
         raw_damage = attacker_ctx.final_value
+
+        # 1. Плоские модификаторы (Fragile, Protection, и т.д.)
         dmg_bonus = attacker.get_status("dmg_up") - attacker.get_status("dmg_down")
         dmg_bonus += attacker.modifiers.get("damage_deal", 0)
 
@@ -156,12 +144,34 @@ class ClashMechanicsMixin:
             "protection")
         incoming_mod -= defender.modifiers.get("damage_take", 0)
 
+        # Базовый урон (не может быть меньше 0)
         total_amt = max(0, raw_damage + dmg_bonus + incoming_mod)
 
+        # 2. Процентные модификаторы от статусов (Smoke и т.д.)
+        pct_modifier = 0.0
+
+        # Перебираем статусы ЗАЩИТНИКА, чтобы найти влияние на входящий урон
+        for status_id, stack in defender.statuses.items():
+            if status_id in STATUS_REGISTRY:
+                # Метод get_damage_modifier должен быть реализован в статусе
+                modifier_func = getattr(STATUS_REGISTRY[status_id], "get_damage_modifier", None)
+                if modifier_func:
+                    pct_modifier += modifier_func(defender, stack)
+
+        # Применяем проценты: NewDamage = Damage * (1 + Sum%)
+        if pct_modifier != 0.0:
+            original = total_amt
+            total_amt = int(total_amt * (1.0 + pct_modifier))
+            # Логгируем изменение
+            pct_str = f"{pct_modifier * 100:+.0f}%"
+            attacker_ctx.log.append(f"🌫️ Mods: {original} -> **{total_amt}** ({pct_str})")
+
+        # 3. Критический удар
         if attacker_ctx.damage_multiplier != 1.0:
             total_amt = int(total_amt * attacker_ctx.damage_multiplier)
             attacker_ctx.log.append(f"⚡ Крит x{attacker_ctx.damage_multiplier}!")
 
+        # 4. Нанесение
         self._deal_direct_damage(attacker_ctx, defender, total_amt, dmg_type)
 
         if dmg_type == "hp" and not defender.is_staggered():
