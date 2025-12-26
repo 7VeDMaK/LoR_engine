@@ -30,5 +30,16 @@ class BasePassive:
     def activate(self, unit, log_func): pass
 
 
-# Реестр для ОБЩИХ пассивных способностей (не талантов)
-PASSIVE_REGISTRY = {}
+# --- НОВАЯ ПАССИВКА ---
+class PassiveTailSwipe(BasePassive):
+    id = "wag_tail"
+    name = "Махнуть хвостиком"
+    description = "При односторонней атаке по вам: создается защитный кубик уклонения (5-7). Кубик сохраняется при победе."
+
+    # Основная логика реализуется в ClashFlowMixin, так как это изменение потока боя
+
+
+# --- РЕЕСТР ---
+PASSIVE_REGISTRY = {
+    "wag_tail": PassiveTailSwipe()  # Регистрируем здесь
+}

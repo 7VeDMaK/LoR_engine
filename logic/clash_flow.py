@@ -1,3 +1,4 @@
+from core.dice import Dice
 from core.models import DiceType
 from logic.clash_mechanics import ClashMechanicsMixin
 
@@ -141,6 +142,20 @@ class ClashFlowMixin(ClashMechanicsMixin):
         card = source.current_card
         self._process_card_self_scripts("on_use", source, target)
 
+        # === ЛОГИКА ПАССИВКИ "Махнуть хвостиком" (Wag the Tail) ===
+        reaction_die = None
+
+        # Проверяем наличие ID пассивки в списке пассивок юнита
+        if "wag_tail" in target.passives:
+            # Расчет значений (база 5-7)
+            # Можно добавить скалирование от уровня, например: +1 за каждые 10 уровней
+            bonus = target.level // 10
+            min_v = 5 + bonus
+            max_v = 7 + bonus
+
+            reaction_die = Dice(min_v, max_v, DiceType.EVADE)
+        # ==========================================================
+
         for j, die in enumerate(card.dice_list):
             if source.is_dead() or target.is_dead() or source.is_staggered(): break
 
@@ -151,7 +166,31 @@ class ClashFlowMixin(ClashMechanicsMixin):
 
             # В односторонней атаке работают только атакующие кубики
             if die.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]:
-                self._apply_damage(ctx, None, "hp")
+
+                # --- ОБРАБОТКА РЕАКЦИИ (УКЛОНЕНИЕ) ---
+                hit_successful = True
+
+                if reaction_die:
+                    # Кидаем кубик реакции (защитника)
+                    def_ctx = self._create_roll_context(target, source, reaction_die)
+                    val_def = def_ctx.final_value
+
+                    detail += f" vs {val_def} (Tail)"
+
+                    if val_def > val:
+                        # УСПЕШНОЕ УКЛОНЕНИЕ
+                        detail += " 💨 Dodged!"
+                        hit_successful = False
+                        # Кубик НЕ уничтожается (Recycle), он попробует уклониться от следующего удара
+                    else:
+                        # ПРОВАЛ
+                        detail += " (Fail)"
+                        reaction_die = None  # Кубик "ломается" и исчезает
+
+                if hit_successful:
+                    self._apply_damage(ctx, None, "hp")
+                # -------------------------------------
+
             else:
                 detail = "Defensive Die (Skipped)"
 
