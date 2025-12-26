@@ -1,4 +1,3 @@
-# ui/profile.py
 import streamlit as st
 import random
 import os
@@ -44,7 +43,7 @@ def render_profile_page():
     unit = roster[sel]
 
     if st.button("💾 СОХРАНИТЬ", type="primary", width='stretch'):
-        UnitLibrary.save_unit(unit);
+        UnitLibrary.save_unit(unit)
         st.toast("Сохранено!", icon="✅")
 
     st.divider()
@@ -169,24 +168,27 @@ def render_profile_page():
         st.markdown(f"**🌟 Таланты** (Очки: {len(unit.talents)} / {total_tal_pts})")
 
         tal_options = sorted(list(TALENT_REGISTRY.keys()))
+        # ВАЖНО: Добавляем unit.name в key, чтобы при смене персонажа виджет обновлялся
         unit.talents = st.multiselect(
             "Выберите таланты",
             options=tal_options,
             default=[t for t in unit.talents if t in TALENT_REGISTRY],
             format_func=format_ability_name,
             max_selections=total_tal_pts,
-            key="ms_talents"
+            key=f"ms_talents_{unit.name}"
         )
 
         # 2. ПАССИВКИ (без лимита)
         st.markdown(f"**🛡️ Пассивные способности**")
         pass_options = sorted(list(PASSIVE_REGISTRY.keys()))
+
+        # ВАЖНО: Добавляем unit.name в key
         unit.passives = st.multiselect(
             "Выберите пассивки",
             options=pass_options,
             default=[p for p in unit.passives if p in PASSIVE_REGISTRY],
             format_func=format_ability_name,
-            key="ms_passives"
+            key=f"ms_passives_{unit.name}"
         )
 
         # Ручное добавление для кастомных ID
