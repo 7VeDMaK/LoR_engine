@@ -1,4 +1,3 @@
-# ui/simulator.py
 import streamlit as st
 import sys
 import random
@@ -10,7 +9,10 @@ from core.models import Card, Unit, DiceType
 from core.library import Library
 from logic.clash import ClashSystem
 from logic.statuses import StatusManager
+# === ИМПОРТ ОБОИХ РЕЕСТРОВ ===
 from logic.passives import PASSIVE_REGISTRY
+from logic.talents import TALENT_REGISTRY
+
 from ui.components import render_unit_stats, render_combat_info, _format_script_text
 from ui.styles import TYPE_ICONS, TYPE_COLORS
 
@@ -101,10 +103,18 @@ def execute_combat():
 
     def trigger_end(unit, prefix):
         logs = []
-        for pid in unit.passives + unit.talents:
+
+        # 1. Passives Round End
+        for pid in unit.passives:
             if pid in PASSIVE_REGISTRY:
                 PASSIVE_REGISTRY[pid].on_round_end(unit, lambda m: logs.append(m))
 
+        # 2. Talents Round End (NEW)
+        for pid in unit.talents:
+            if pid in TALENT_REGISTRY:
+                TALENT_REGISTRY[pid].on_round_end(unit, lambda m: logs.append(m))
+
+        # 3. Statuses Round End
         status_logs = StatusManager.process_turn_end(unit)
         logs.extend(status_logs)
 
@@ -291,44 +301,53 @@ def render_slot_strip(unit: Unit, opponent: Unit, slot_idx: int, key_prefix: str
 
 def render_active_abilities(unit, unit_key):
     """Рендерит кнопки для активных способностей юнита."""
-    all_passives = unit.passives + unit.talents
+    # === СОБИРАЕМ СПОСОБНОСТИ ИЗ ДВУХ РЕЕСТРОВ ===
+    abilities = []
+
+    # 1. Passives
+    for pid in unit.passives:
+        if pid in PASSIVE_REGISTRY:
+            abilities.append((pid, PASSIVE_REGISTRY[pid]))
+
+    # 2. Talents
+    for pid in unit.talents:
+        if pid in TALENT_REGISTRY:
+            abilities.append((pid, TALENT_REGISTRY[pid]))
+
     has_actives = False
 
     # Контейнер для кнопок, чтобы они шли в ряд или сеткой
-    # Здесь просто перебираем
-    for pid in all_passives:
-        if pid in PASSIVE_REGISTRY:
-            passive_obj = PASSIVE_REGISTRY[pid]
-            # Проверяем флаг
-            if getattr(passive_obj, "is_active_ability", False):
-                has_actives = True
+    for pid, passive_obj in abilities:
+        # Проверяем флаг
+        if getattr(passive_obj, "is_active_ability", False):
+            has_actives = True
 
-                cd = unit.cooldowns.get(pid, 0)
-                active_dur = unit.active_buffs.get(pid, 0)
+            cd = unit.cooldowns.get(pid, 0)
+            active_dur = unit.active_buffs.get(pid, 0)
 
-                # Состояние кнопки
-                if active_dur > 0:
-                    label = f"🔥 {passive_obj.name} (Active: {active_dur})"
-                    disabled = True
-                    help_txt = f"Действует еще {active_dur} раунда"
-                elif cd > 0:
-                    label = f"⏳ {passive_obj.name} (CD: {cd})"
-                    disabled = True
-                    help_txt = f"Перезарядка {cd} раунда"
-                else:
-                    label = f"✨ Activate {passive_obj.name}"
-                    disabled = False
-                    help_txt = passive_obj.description
+            # Состояние кнопки
+            if active_dur > 0:
+                label = f"🔥 {passive_obj.name} (Active: {active_dur})"
+                disabled = True
+                help_txt = f"Действует еще {active_dur} раунда"
+            elif cd > 0:
+                label = f"⏳ {passive_obj.name} (CD: {cd})"
+                disabled = True
+                help_txt = f"Перезарядка {cd} раунда"
+            else:
+                label = f"✨ Activate {passive_obj.name}"
+                disabled = False
+                help_txt = passive_obj.description
 
-                if st.button(label, key=f"act_{unit_key}_{pid}", disabled=disabled, use_container_width=True,
-                             help=help_txt):
-                    # Логика активации
-                    def log_f(msg):
-                        st.session_state.get('battle_logs', []).append(
-                            {"round": "Skill", "rolls": "Activate", "details": msg})
+            if st.button(label, key=f"act_{unit_key}_{pid}", disabled=disabled, use_container_width=True,
+                         help=help_txt):
+                # Логика активации
+                def log_f(msg):
+                    st.session_state.get('battle_logs', []).append(
+                        {"round": "Skill", "rolls": "Activate", "details": msg})
 
-                    if passive_obj.activate(unit, log_f):
-                        st.rerun()
+                if passive_obj.activate(unit, log_f):
+                    st.rerun()
 
     if has_actives:
         st.caption("Active Abilities")

@@ -1,8 +1,10 @@
+# engine.py
 import random
 from core.events import EventManager
 from core.models import Unit, Dice
 from logic.modifiers import RollContext
 from logic.passives import PASSIVE_REGISTRY
+from logic.talents import TALENT_REGISTRY
 
 
 class CombatEngine:
@@ -11,12 +13,17 @@ class CombatEngine:
         self.rng = random.Random(seed)
 
     def initialize_unit(self, unit: Unit):
-        """Подключает пассивки юнита к событиям"""
-        for pid in unit.passive_ids:
+        """Подключает пассивки и таланты юнита к событиям"""
+
+        # Passives
+        for pid in unit.passives:
             if pid in PASSIVE_REGISTRY:
-                # В полной версии пассивка сама знает свой триггер.
-                # Здесь мы жестко привязываем всё к BEFORE_ROLL для простоты.
                 self.events.subscribe("BEFORE_ROLL", PASSIVE_REGISTRY[pid])
+
+        # Talents
+        for pid in unit.talents:
+            if pid in TALENT_REGISTRY:
+                self.events.subscribe("BEFORE_ROLL", TALENT_REGISTRY[pid])
 
     def roll_attack(self, attacker: Unit, defender: Unit, min_d: int, max_d: int):
         # 1. Базовый рандом
