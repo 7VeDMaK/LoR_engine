@@ -1,0 +1,72 @@
+{
+  "cards": [
+    {
+      "id": "выпустить_пар_a717",
+      "name": "Выпустить пар",
+      "tier": 1,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {},
+      "dice": [
+        {
+          "type": "slash",
+          "base_min": 1,
+          "base_max": 4,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "smoke",
+                  "stack": 1,
+                  "duration": 1,
+                  "delay": 0,
+                  "target": "target"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "slash",
+          "base_min": 1,
+          "base_max": 4,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "smoke",
+                  "stack": 1,
+                  "duration": 1,
+                  "delay": 0,
+                  "target": "target"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "slash",
+          "base_min": 1,
+          "base_max": 4,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "smoke",
+                  "stack": 1,
+                  "duration": 1,
+                  "delay": 0,
+                  "target": "target"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

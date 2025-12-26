@@ -121,14 +121,21 @@ class ClashMechanicsMixin:
 
         elif dmg_type == "stagger":
             dtype_name = source_ctx.dice.dtype.value.lower()
-            res = getattr(target.stagger_resists, dtype_name, 1.0)
+
+            # === ИЗМЕНЕНИЕ: Используем HP_RESISTS для стаггер-урона ===
+            # Раньше было: res = getattr(target.stagger_resists, dtype_name, 1.0)
+            res = getattr(target.hp_resists, dtype_name, 1.0)
+
             final_dmg = int(amount * res)
             target.current_stagger -= final_dmg
-            source_ctx.log.append(f"😵 **{final_dmg}** Stagger урона по {target.name}")
 
-    # === ОБНОВЛЕННЫЙ МЕТОД НАНЕСЕНИЯ УРОНА ===
+            # Добавляем инфо о резистах в лог, если они отличаются от 1.0
+            resist_msg = ""
+            if res != 1.0: resist_msg = f" (Res x{res:.1f})"
+
+            source_ctx.log.append(f"😵 **{final_dmg}** Stagger урона{resist_msg} по {target.name}")
+
     def _apply_damage(self, attacker_ctx: RollContext, defender_ctx: RollContext, dmg_type: str = "hp"):
-        """Стандартный расчет урона с учетом статусов."""
         attacker = attacker_ctx.source
         defender = attacker_ctx.target or attacker_ctx.target
 
@@ -136,7 +143,6 @@ class ClashMechanicsMixin:
 
         raw_damage = attacker_ctx.final_value
 
-        # 1. Плоские модификаторы (Fragile, Protection, и т.д.)
         dmg_bonus = attacker.get_status("dmg_up") - attacker.get_status("dmg_down")
         dmg_bonus += attacker.modifiers.get("damage_deal", 0)
 
@@ -144,38 +150,35 @@ class ClashMechanicsMixin:
             "protection")
         incoming_mod -= defender.modifiers.get("damage_take", 0)
 
-        # Базовый урон (не может быть меньше 0)
         total_amt = max(0, raw_damage + dmg_bonus + incoming_mod)
 
-        # 2. Процентные модификаторы от статусов (Smoke и т.д.)
+        # Процентные модификаторы (Дым и т.д.)
         pct_modifier = 0.0
-
-        # Перебираем статусы ЗАЩИТНИКА, чтобы найти влияние на входящий урон
         for status_id, stack in defender.statuses.items():
             if status_id in STATUS_REGISTRY:
-                # Метод get_damage_modifier должен быть реализован в статусе
                 modifier_func = getattr(STATUS_REGISTRY[status_id], "get_damage_modifier", None)
                 if modifier_func:
                     pct_modifier += modifier_func(defender, stack)
 
-        # Применяем проценты: NewDamage = Damage * (1 + Sum%)
         if pct_modifier != 0.0:
             original = total_amt
             total_amt = int(total_amt * (1.0 + pct_modifier))
-            # Логгируем изменение
             pct_str = f"{pct_modifier * 100:+.0f}%"
             attacker_ctx.log.append(f"🌫️ Mods: {original} -> **{total_amt}** ({pct_str})")
 
-        # 3. Критический удар
         if attacker_ctx.damage_multiplier != 1.0:
             total_amt = int(total_amt * attacker_ctx.damage_multiplier)
             attacker_ctx.log.append(f"⚡ Крит x{attacker_ctx.damage_multiplier}!")
 
-        # 4. Нанесение
         self._deal_direct_damage(attacker_ctx, defender, total_amt, dmg_type)
 
         if dmg_type == "hp" and not defender.is_staggered():
             dtype_name = attacker_ctx.dice.dtype.value.lower()
-            res_stagger = getattr(defender.stagger_resists, dtype_name, 1.0)
+            # Stagger урон от HP атаки тоже считаем через hp_resists, если нужно единообразие?
+            # В оригинале HP атака наносит доп. Stagger урон.
+            # Оставим тут пока stagger_resists или заменим на hp_resists, если ты хочешь ПОЛНОЕ соответствие.
+            # Судя по запросу "stagger damage dealt... same as normal resists", заменим и тут.
+            res_stagger = getattr(defender.hp_resists, dtype_name, 1.0)
+
             stg_dmg = int(total_amt * res_stagger)
             defender.current_stagger -= stg_dmg

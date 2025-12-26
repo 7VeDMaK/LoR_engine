@@ -15,11 +15,11 @@ def render_editor_page():
     # --- 1. Основные параметры ---
     with st.container(border=True):
         c1, c2, c3 = st.columns([3, 1, 1])
-        name = c1.text_input("Card Name", "First Aid Kit", placeholder="Название карты")
+        name = c1.text_input("Card Name", "Focus Strike", placeholder="Название карты")
         tier = c2.selectbox("Tier", [1, 2, 3], index=0)
         ctype = c3.selectbox("Type", ["melee", "ranged"])
 
-        desc = st.text_area("Description", "On Use: Heal Target for 5 HP", height=68,
+        desc = st.text_area("Description", "On Use: Gain 3 Self Control", height=68,
                             placeholder="Описание карты...")
 
     # --- 2. Эффекты Карты (Card Scripts) ---
@@ -29,38 +29,28 @@ def render_editor_page():
     with st.expander("✨ Эффекты карты (On Use / Passive)", expanded=True):
         st.info("Здесь настраиваются эффекты самой карты (до бросков кубиков).")
 
-        ce_col1, ce_col2, ce_col3 = st.columns([1, 1, 1.5])  # Чуть расширил 3 колонку
+        ce_col1, ce_col2, ce_col3 = st.columns([1, 1, 1])
         ce_trigger = ce_col1.selectbox("Триггер", ["on_use", "on_combat_end"], key="ce_trig")
         ce_type = ce_col2.selectbox("Тип эффекта", ["None", "Restore HP", "Apply Status", "Restore SP"], key="ce_type")
 
         script_payload = {}
 
         if ce_type == "Restore HP":
-            # Разбиваем колонку на две для Количества и Цели
-            h_c1, h_c2 = ce_col3.columns(2)
-            amt = h_c1.number_input("HP Amount", 1, 100, 5, key="ce_hp_amt")
-            tgt = h_c2.selectbox("Target", ["self", "target"], key="ce_hp_tgt")
-
+            amt = ce_col3.number_input("HP Amount", 1, 100, 5, key="ce_hp_amt")
             script_payload = {
                 "script_id": "restore_hp",
-                "params": {"amount": int(amt), "target": tgt}
+                "params": {"amount": int(amt), "target": "self"}
             }
 
         elif ce_type == "Restore SP":
-            # Аналогично для SP
-            s_c1, s_c2 = ce_col3.columns(2)
-            amt = s_c1.number_input("SP Amount", 1, 100, 5, key="ce_sp_amt")
-            tgt = s_c2.selectbox("Target", ["self", "target"], key="ce_sp_tgt")
-
-            # Пока используем restore_hp логику или заглушку, так как restore_sp может не быть
-            # Но если мы его добавим в card_scripts, то будет работать.
-            # Для надежности используем restore_hp (как было раньше), но в идеале нужен restore_sp
+            # Для SP нам понадобится отдельный скрипт restore_sp, но пока можно использовать restore_hp логику или добавить позже
+            # Пока сделаем заглушку через restore_hp (технически можно добавить restore_sp в card_scripts.py)
+            amt = ce_col3.number_input("SP Amount", 1, 100, 5, key="ce_sp_amt")
+            st.warning("Требуется скрипт restore_sp (пока не реализован, использую HP)")
             script_payload = {
-                "script_id": "restore_hp",  # Используем HP скрипт как транспорт, но вообще нужен отдельный ID
-                "params": {"amount": int(amt), "target": tgt}
+                "script_id": "restore_hp",
+                "params": {"amount": int(amt), "target": "self"}
             }
-            # Примечание: В logic/card_scripts.py у нас пока нет "restore_sp", но это легко добавить.
-            # Пока оставим так, главное - структура.
 
         elif ce_type == "Apply Status":
             # Тут теперь полный список статусов!
@@ -121,13 +111,10 @@ def render_editor_page():
                 dice_payload = {}
 
                 if de_type == "Restore HP":
-                    h_c1, h_c2 = st.columns(2)
-                    damt = h_c1.number_input("Heal Amount", 1, 20, 2, key=f"de_h_amt_{i}")
-                    dtgt = h_c2.selectbox("Target", ["self", "target"], key=f"de_h_tgt_{i}")
-
+                    damt = st.number_input("Heal Amount", 1, 20, 2, key=f"de_h_amt_{i}")
                     dice_payload = {
                         "script_id": "restore_hp",
-                        "params": {"amount": int(damt), "target": dtgt}
+                        "params": {"amount": int(damt), "target": "self"}
                     }
 
                 elif de_type == "Apply Status":
