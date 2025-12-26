@@ -5,21 +5,21 @@ from typing import List, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from core.models import Unit, Dice
 
+
 @dataclass
 class RollContext:
     """
-    Контекст броска кубика. Хранит:
-    - source: кто кинул
-    - target: в кого (может быть None)
-    - dice: сам кубик (данные)
-    - final_value: текущее значение силы (меняется статусами)
-    - log: история изменений (для отображения игроку)
+    Контекст броска кубика.
     """
     source: 'Unit'
     target: Optional['Unit']
     dice: Optional['Dice']
     final_value: int
     log: List[str] = field(default_factory=list)
+
+    # === НОВЫЕ ПОЛЯ ДЛЯ КРИТОВ ===
+    damage_multiplier: float = 1.0  # Множитель урона (по умолчанию x1.0)
+    is_critical: bool = False  # Флаг, был ли крит
 
     def modify_power(self, amount: int, reason: str):
         """Изменяет значение кубика и записывает это в лог."""

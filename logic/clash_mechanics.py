@@ -1,4 +1,3 @@
-# logic/clash_mechanics.py
 import random
 from core.models import Dice, DiceType
 from logic.context import RollContext
@@ -10,9 +9,6 @@ from logic.passives import PASSIVE_REGISTRY
 class ClashMechanicsMixin:
     """
     Уровень 1: Низкоуровневая механика.
-    - Броски кубиков
-    - Нанесение урона (HP/Stagger)
-    - Обработка скриптов и пассивок
     """
 
     def _process_card_scripts(self, trigger: str, ctx: RollContext):
@@ -26,7 +22,6 @@ class ClashMechanicsMixin:
     def _process_card_self_scripts(self, trigger: str, source, target):
         card = source.current_card
         if not card or not card.scripts or trigger not in card.scripts: return
-        # Логгер берется из self.logs основного класса
         ctx = RollContext(source=source, target=target, dice=None, final_value=0, log=self.logs)
         for script_data in card.scripts[trigger]:
             script_id = script_data.get("script_id")
@@ -89,12 +84,10 @@ class ClashMechanicsMixin:
             dtype_name = source_ctx.dice.dtype.value.lower()
             res = getattr(target.hp_resists, dtype_name, 1.0)
 
-            # --- ВАЖНОЕ ИЗМЕНЕНИЕ: Stagger Multiplier ---
             is_stag_hit = False
             if target.is_staggered():
                 res *= 2.0
                 is_stag_hit = True
-            # ---------------------------------------------
 
             final_dmg = int(amount * res)
 
@@ -125,7 +118,7 @@ class ClashMechanicsMixin:
         attacker = attacker_ctx.source
         defender = attacker_ctx.target or attacker_ctx.target
 
-        # On Hit
+        # On Hit Events
         for status_id, stack in list(attacker.statuses.items()):
             if status_id in STATUS_REGISTRY: STATUS_REGISTRY[status_id].on_hit(attacker_ctx, stack)
         for pid in attacker.passives + attacker.talents:
@@ -143,6 +136,12 @@ class ClashMechanicsMixin:
         incoming_mod -= defender.modifiers.get("damage_take", 0)
 
         total_amt = max(0, raw_damage + dmg_bonus + incoming_mod)
+
+        # === КРИТИЧЕСКИЙ УДАР (МНОЖИТЕЛЬ) ===
+        # Применяем множитель, если статус или пассивка выставили его
+        if attacker_ctx.damage_multiplier != 1.0:
+            total_amt = int(total_amt * attacker_ctx.damage_multiplier)
+            # Лог о крите уже должен быть добавлен в on_hit статуса
 
         # Apply Main Damage
         self._deal_direct_damage(attacker_ctx, defender, total_amt, dmg_type)

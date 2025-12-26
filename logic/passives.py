@@ -1,19 +1,17 @@
 # logic/passives.py
 from logic.context import RollContext
-from core.models import DiceType
+# ИЗМЕНЕНИЕ: Импортируем из enums, чтобы избежать цикла с core.models -> Unit
+from core.enums import DiceType
 
 
 class BasePassive:
     id = "base"
     name = "Base Passive"
     description = "No description"
-
-    # Флаги для активных способностей
     is_active_ability = False
     cooldown = 0
     duration = 0
 
-    # Хуки событий
     def on_combat_start(self, unit, log_func): pass
 
     def on_combat_end(self, unit, log_func): pass
@@ -30,12 +28,11 @@ class BasePassive:
 
     def on_hit(self, ctx: RollContext): pass
 
-    # Новый метод для кнопки активации
     def activate(self, unit, log_func): pass
 
 
 # ==========================================
-# 5.1 Встроенная Броня (Naked Defense)
+# 5.1 Встроенная Броня
 # ==========================================
 class TalentNakedDefense(BasePassive):
     id = "naked_defense"
@@ -43,7 +40,6 @@ class TalentNakedDefense(BasePassive):
     description = "5.1 Если броня не надета (None), резисты становятся равными 1.0."
 
     def on_combat_start(self, unit, log_func):
-        # Проверяем, если имя брони пустое или "None"
         if not unit.armor_name or unit.armor_name.lower() in ["none", "нет", "empty", "naked"]:
             unit.hp_resists.slash = 1.0
             unit.hp_resists.pierce = 1.0
@@ -53,7 +49,7 @@ class TalentNakedDefense(BasePassive):
 
 
 # ==========================================
-# 5.2 Злобная расплата (Vicious Payback)
+# 5.2 Злобная расплата
 # ==========================================
 class TalentVengefulPayback(BasePassive):
     id = "vengeful_payback"
@@ -61,67 +57,58 @@ class TalentVengefulPayback(BasePassive):
     description = "5.2 За каждые 10 потерянных HP вы получаете 1 Силу на следующий раунд."
 
     def on_round_end(self, unit, log_func):
-        # 1. Считаем потерянные HP
         lost_hp = unit.max_hp - unit.current_hp
         chunks = lost_hp // 10
-
-        # 2. Смотрим память (сколько мы уже учли)
         mem_key = f"{self.id}_chunks"
         previous_chunks = unit.memory.get(mem_key, 0)
 
         if chunks > previous_chunks:
             diff = chunks - previous_chunks
-            unit.add_status("strength", diff, duration=2)  # Duration 2, чтобы хватило на некст раунд
+            unit.add_status("strength", diff, duration=2)
             if log_func:
                 log_func(f"🩸 {self.name}: Потеряно здоровья (стаков: {diff}). +{diff} Силы.")
-
-        # Обновляем память
         unit.memory[mem_key] = chunks
 
 
 # ==========================================
-# 5.3 Ярость (Berserker Rage)
+# 5.3 Ярость
 # ==========================================
 class TalentBerserkerRage(BasePassive):
     id = "berserker_rage"
     name = "Ярость"
-    description = "5.3 Активно: Входите в ярость на 3 раунда (+1 Слот Атаки). КД 5 ходов. Спадает при потере сознания."
-
+    description = "5.3 Активно: Входите в ярость на 3 раунда (+1 Слот Атаки). КД 5 ходов."
     is_active_ability = True
     cooldown = 5
     duration = 3
 
     def activate(self, unit, log_func):
-        # Проверка КД
-        if unit.cooldowns.get(self.id, 0) > 0:
-            return False
-
-        # Активация
+        if unit.cooldowns.get(self.id, 0) > 0: return False
         unit.active_buffs[self.id] = self.duration
         unit.cooldowns[self.id] = self.cooldown
-
+        unit.add_status("strength", 1, duration=3)
         if log_func:
-            log_func(f"😡 {self.name}: Активирована! (+1 Куб Атаки на 3 раунда)")
+            log_func(f"😡 {self.name}: Активирована! (+1 Куб Атаки, +1 Силы)")
         return True
 
 
 # ==========================================
-# 5.4 Не теряя голову (Composure / Calm Mind)
+# 5.4 Не теряя голову (Calm Mind)
 # ==========================================
 class TalentCalmMind(BasePassive):
     id = "calm_mind"
     name = "Не теряя голову"
-    description = "5.4 Все атаки восстанавливают 1 SP (Самообладание)."
+    description = "5.4 При атаке накладывает +1 Самообладание (Макс 100). Самообладание дает шанс крита (x2 урон)."
 
     def on_hit(self, ctx: RollContext):
-        # Восстанавливаем 1 SP
-        unit = ctx.source
-        if unit.current_sp < unit.max_sp:
-            unit.current_sp += 1
-            ctx.log.append(f"🧠 {self.name}: +1 SP")
+        # Проверяем текущее кол-во стаков
+        current_stacks = ctx.source.get_status("self_control")
+
+        # Максимум 100 зарядов
+        if current_stacks < 100:
+            ctx.source.add_status("self_control", 1)
+            ctx.log.append(f"💨 {self.name}: +1 Self-Control")
 
 
-# --- РЕЕСТР (Все доступные пассивки должны быть здесь) ---
 PASSIVE_REGISTRY = {
     "naked_defense": TalentNakedDefense(),
     "vengeful_payback": TalentVengefulPayback(),
