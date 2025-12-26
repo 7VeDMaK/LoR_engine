@@ -164,6 +164,33 @@ class PassiveBlessingOfWind(BasePassive):
         if ctx.dice.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT, DiceType.EVADE]:
             ctx.modify_power(bonus, f"Blessing ({smoke})")
 
+
+# ==========================================
+# Живи быстро, умирай молодым (Live Fast, Die Young)
+# ==========================================
+class PassiveLiveFastDieYoung(BasePassive):
+    id = "live_fast_die_young"
+    name = "Живи быстро, умирай молодым"
+    description = "Каждый кубик скорости даёт +1 к Силе и Стойкости в начале сцены. +1 Дым за победу в столкновении атакой."
+
+    def on_combat_start(self, unit, log_func):
+        # ИСПРАВЛЕНИЕ: Считаем реальные активные слоты (unit.active_slots),
+        # а не базовые характеристики. Это учитывает Ярость, Ускорение и другие бонусы.
+        slots_count = len(unit.active_slots) if unit.active_slots else 1
+
+        # Накладываем баффы
+        unit.add_status("strength", slots_count)
+        unit.add_status("endurance", slots_count)
+
+        if log_func:
+            log_func(f"⚡ **{self.name}**: +{slots_count} Силы и Стойкости (за {slots_count} слота)")
+
+    def on_clash_win(self, ctx: RollContext):
+        # Если выиграли атакующим кубиком -> +1 Дым
+        if ctx.dice.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]:
+            ctx.source.add_status("smoke", 1, duration=99)
+            ctx.log.append(f"⚡ **{self.name}**: +1 Дым за победу")
+
 # === РЕГИСТРАЦИЯ ===
 PASSIVE_REGISTRY = {
     "hedonism": PassiveHedonism(),
@@ -171,4 +198,5 @@ PASSIVE_REGISTRY = {
     "backstreet_demon": PassiveBackstreetDemon(),
     "daughter_of_backstreets": PassiveDaughterOfBackstreets(),
     "blessing_of_wind": PassiveBlessingOfWind(),
+    "live_fast_die_young": PassiveLiveFastDieYoung(), # <--- NEW
 }

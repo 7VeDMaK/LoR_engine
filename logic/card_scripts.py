@@ -17,6 +17,11 @@ def apply_status(context: 'RollContext', params: dict):
     unit_to_affect = context.target if target_type == "target" else context.source
     if not unit_to_affect: return
 
+    # === ХАК ДЛЯ ДЫМА ===
+    # Дым всегда должен быть "вечным", так как у него своя механика спада.
+    if status_name == "smoke":
+        duration = 99
+
     if unit_to_affect and status_name:
         unit_to_affect.add_status(status_name, stack, duration=duration, delay=delay)
 
