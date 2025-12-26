@@ -1,0 +1,322 @@
+{
+  "cards": [
+    {
+      "id": "frenzy_0dc2",
+      "name": "Frenzy",
+      "tier": 1,
+      "type": "melee",
+      "description": "On Hit: Inflict 1 Bleed",
+      "flags": [],
+      "scripts": {},
+      "dice": [
+        {
+          "type": "slash",
+          "base_min": 2,
+          "base_max": 4,
+          "scripts": {}
+        },
+        {
+          "type": "slash",
+          "base_min": 2,
+          "base_max": 4,
+          "scripts": {}
+        },
+        {
+          "type": "slash",
+          "base_min": 2,
+          "base_max": 4,
+          "scripts": {}
+        }
+      ]
+    },
+    {
+      "id": "123_0936",
+      "name": "123",
+      "tier": 1,
+      "type": "melee",
+      "description": "On Hit: Inflict 1 Bleed",
+      "flags": [],
+      "scripts": {},
+      "dice": [
+        {
+          "type": "slash",
+          "base_min": 1,
+          "base_max": 1,
+          "scripts": {}
+        }
+      ]
+    },
+    {
+      "id": "слежка_8a0f",
+      "name": "Слежка",
+      "tier": 1,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {
+        "on_use": [
+          {
+            "script_id": "restore_hp",
+            "params": {
+              "amount": 20,
+              "target": "self"
+            }
+          }
+        ]
+      },
+      "dice": [
+        {
+          "type": "slash",
+          "base_min": 1,
+          "base_max": 4,
+          "scripts": {}
+        }
+      ]
+    },
+    {
+      "id": "furry_osa_e91a",
+      "name": "Furry Osa",
+      "tier": 1,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {},
+      "dice": [
+        {
+          "type": "slash",
+          "base_min": 43,
+          "base_max": 46,
+          "scripts": {}
+        },
+        {
+          "type": "pierce",
+          "base_min": 23,
+          "base_max": 50,
+          "scripts": {}
+        },
+        {
+          "type": "blunt",
+          "base_min": 11,
+          "base_max": 35,
+          "scripts": {}
+        },
+        {
+          "type": "block",
+          "base_min": 50,
+          "base_max": 50,
+          "scripts": {}
+        }
+      ]
+    },
+    {
+      "id": "block_af8c",
+      "name": "Block",
+      "tier": 1,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {},
+      "dice": [
+        {
+          "type": "block",
+          "base_min": 2,
+          "base_max": 5,
+          "scripts": {}
+        }
+      ]
+    },
+    {
+      "id": "focus_strike_1fa2",
+      "name": "Focus Strike",
+      "tier": 1,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {
+        "on_use": [
+          {
+            "script_id": "apply_status",
+            "params": {
+              "status": "self_control",
+              "stack": 20,
+              "duration": 1,
+              "delay": 0,
+              "target": "self"
+            }
+          }
+        ]
+      },
+      "dice": [
+        {
+          "type": "slash",
+          "base_min": 3,
+          "base_max": 7,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "self_control",
+                  "stack": 20,
+                  "duration": 1,
+                  "delay": 0,
+                  "target": "self"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "slash",
+          "base_min": 3,
+          "base_max": 7,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "self_control",
+                  "stack": 20,
+                  "duration": 1,
+                  "delay": 0,
+                  "target": "self"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "slash",
+          "base_min": 3,
+          "base_max": 7,
+          "scripts": {}
+        },
+        {
+          "type": "slash",
+          "base_min": 3,
+          "base_max": 7,
+          "scripts": {}
+        }
+      ]
+    },
+    {
+      "id": "focus_strike_678f",
+      "name": "Focus Strike",
+      "tier": 1,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {
+        "on_use": [
+          {
+            "script_id": "apply_status",
+            "params": {
+              "status": "self_control",
+              "stack": 20,
+              "duration": 5,
+              "delay": 1,
+              "target": "self"
+            }
+          }
+        ]
+      },
+      "dice": [
+        {
+          "type": "evade",
+          "base_min": 3,
+          "base_max": 7,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "self_control",
+                  "stack": 20,
+                  "duration": 1,
+                  "delay": 0,
+                  "target": "self"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "slash",
+          "base_min": 3,
+          "base_max": 7,
+          "scripts": {
+            "on_hit": [
+              {
+                "script_id": "apply_status",
+                "params": {
+                  "status": "self_control",
+                  "stack": 20,
+                  "duration": 1,
+                  "delay": 0,
+                  "target": "self"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "first_aid_kit_f317",
+      "name": "First Aid Kit",
+      "tier": 1,
+      "type": "melee",
+      "description": "On Use: Heal Target for 5 HP",
+      "flags": [],
+      "scripts": {
+        "on_use": [
+          {
+            "script_id": "restore_hp",
+            "params": {
+              "amount": 20,
+              "target": "target"
+            }
+          }
+        ]
+      },
+      "dice": [
+        {
+          "type": "evade",
+          "base_min": 1,
+          "base_max": 1,
+          "scripts": {}
+        }
+      ]
+    },
+    {
+      "id": "смокер_347c",
+      "name": "СМОКЕР",
+      "tier": 1,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {
+        "on_use": [
+          {
+            "script_id": "apply_status",
+            "params": {
+              "status": "smoke",
+              "stack": 10,
+              "duration": 5,
+              "delay": 0,
+              "target": "self"
+            }
+          }
+        ]
+      },
+      "dice": [
+        {
+          "type": "slash",
+          "base_min": 3,
+          "base_max": 7,
+          "scripts": {}
+        }
+      ]
+    }
+  ]
+}
