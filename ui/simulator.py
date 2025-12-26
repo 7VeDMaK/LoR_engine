@@ -115,64 +115,115 @@ def reset_game():
     st.session_state['phase'] = 'roll'
 
 
-# --- НОВЫЙ РЕНДЕР СЛОТА (ПОЛОСКА) ---
+def sync_state_from_widgets(unit: Unit, key_prefix: str):
+    for i, slot in enumerate(unit.active_slots):
+        lib_key = f"{key_prefix}_lib_{i}"
+        if lib_key in st.session_state:
+            slot['card'] = st.session_state[lib_key]
+        tgt_key = f"{key_prefix}_tgt_{i}"
+        if tgt_key in st.session_state:
+            slot['target_slot'] = st.session_state[tgt_key]
+        aggro_key = f"{key_prefix}_aggro_{i}"
+        if aggro_key in st.session_state:
+            slot['is_aggro'] = st.session_state[aggro_key]
+
+
+# --- ПРЕДРАСЧЕТ (ИСПРАВЛЕННЫЙ) ---
+def precalculate_interactions(p1: Unit, p2: Unit):
+    """
+    1. Клонируем юнитов (или хотя бы их слоты), чтобы не менять реальное состояние до боя.
+    2. Применяем `ClashSystem.calculate_redirections` для симуляции перехвата.
+    3. Рассчитываем статусы UI.
+    4. Откатываем target_slot (если нужно) или оставляем как есть, если это легальное изменение для UI.
+
+    В данном случае мы можем менять target_slot "понарошку" или реально, так как resolve_turn все равно все пересчитает.
+    Но чтобы не путать пользователя, мы используем 'ui_status' как визуализацию.
+    """
+
+    # Чтобы не портить реальные таргеты до боя, работаем аккуратно.
+    # Но так как resolve_turn перезаписывает таргеты в calculate_redirections, мы можем вызвать его здесь смело.
+    # Главное, чтобы это соответствовало тому, что будет в бою.
+
+    # 1. Применяем логику перенаправления (как в бою)
+    ClashSystem.calculate_redirections(p1, p2)
+    ClashSystem.calculate_redirections(p2, p1)
+
+    # 2. Теперь слоты имеют target_slot с учетом перехвата. Строим UI.
+    def _calc_ui(me, enemy):
+        for i, my_slot in enumerate(me.active_slots):
+            target_idx = my_slot.get('target_slot', -1)
+            status = {"text": "⛔ NO TARGET", "icon": "⛔"}
+
+            if target_idx != -1 and target_idx < len(enemy.active_slots):
+                enemy_slot = enemy.active_slots[target_idx]
+
+                # Если враг целится в нас -> CLASH
+                if enemy_slot.get('target_slot') == i:
+                    status = {"text": f"CLASH S{target_idx + 1}", "icon": "⚔️"}
+                else:
+                    status = {"text": f"ATK S{target_idx + 1}", "icon": "🏹"}
+
+            my_slot['ui_status'] = status
+
+    _calc_ui(p1, p2)
+    _calc_ui(p2, p1)
+
+
 def render_slot_strip(unit: Unit, opponent: Unit, slot_idx: int, key_prefix: str):
     slot = unit.active_slots[slot_idx]
     speed = slot['speed']
+    ui_stat = slot.get('ui_status', {"text": "...", "icon": ""})
+    selected_card = slot.get('card')
+    card_name = f"🃏 {selected_card.name}" if selected_card else "⚠️ No Page"
+    label = f"S{slot_idx + 1} (🎲{speed}) | {ui_stat['icon']} {ui_stat['text']} | {card_name}"
 
-    border_color = "red" if speed < 3 else "orange" if speed < 6 else "green"
-
-    with st.container(border=True):
-        # ВЕРХНЯЯ ЧАСТЬ: ИНФО СЛОТА И ВЫБОР ЦЕЛИ
-        c_head1, c_head2 = st.columns([1, 2])
-        c_head1.markdown(f"**Slot {slot_idx + 1}** :{border_color}[🎲{speed}]")
+    with st.expander(label, expanded=False):
+        c_tgt, c_sel, c_aggro = st.columns([1.5, 2, 0.5])
 
         target_options = [-1]
         target_labels = {-1: "⛔ None"}
-
         for i, opp_slot in enumerate(opponent.active_slots):
             target_options.append(i)
-            is_clashing = (opp_slot.get('target_slot') == slot_idx)
-            icon = "⚔️" if is_clashing else "🏹"
-            target_labels[i] = f"{icon} S{i + 1} ({opp_slot['speed']})"
+            # Иконка показывает, что враг делает
+            # Тут можно показать, куда он целится сейчас
+            opp_tgt = opp_slot.get('target_slot', -1)
+            icon = "⚔️" if opp_tgt == slot_idx else "🛡️"
+            target_labels[i] = f"{icon} S{i + 1} (Spd {opp_slot['speed']})"
 
         current_tgt = slot.get('target_slot', -1)
         if current_tgt not in target_options: current_tgt = -1
 
-        new_target = c_head2.selectbox(
+        c_tgt.selectbox(
             "Target", target_options,
             format_func=lambda x: target_labels[x],
             index=target_options.index(current_tgt),
             key=f"{key_prefix}_tgt_{slot_idx}",
             label_visibility="collapsed"
         )
-        unit.active_slots[slot_idx]['target_slot'] = new_target
+
+        all_cards = Library.get_all_cards()
+        card_index = 0
+        if selected_card:
+            for idx, c in enumerate(all_cards):
+                if c.name == selected_card.name:
+                    card_index = idx
+                    break
+
+        c_sel.selectbox(
+            "Page", all_cards,
+            format_func=lambda x: x.name,
+            index=card_index,
+            key=f"{key_prefix}_lib_{slot_idx}",
+            label_visibility="collapsed"
+        )
+
+        c_aggro.checkbox("✋", value=slot.get('is_aggro', False),
+                         key=f"{key_prefix}_aggro_{slot_idx}",
+                         help="Aggro")
 
         st.divider()
 
-        # СРЕДНЯЯ ЧАСТЬ: ВЫБОР КАРТЫ
-        c_sel, c_aggro = st.columns([3, 1])
-        all_cards = Library.get_all_cards()
-
-        selected_card = c_sel.selectbox(
-            "Page", all_cards,
-            format_func=lambda x: x.name,
-            key=f"{key_prefix}_lib_{slot_idx}",
-            label_visibility="collapsed",
-            placeholder="Select Page..."
-        )
-
-        is_aggro = c_aggro.checkbox("✋", value=slot.get('is_aggro', False),
-                                    key=f"{key_prefix}_aggro_{slot_idx}",
-                                    help="Aggro: Принудительный перехват")
-
-        if not unit.is_staggered():
-            unit.active_slots[slot_idx]['card'] = selected_card
-            unit.active_slots[slot_idx]['is_aggro'] = is_aggro
-
-        # НИЖНЯЯ ЧАСТЬ: ДЕТАЛИ КАРТЫ (Типы атак и Описание)
         if selected_card:
-            # 1. Кубики (Цветные иконки)
             if selected_card.dice_list:
                 dice_display = []
                 for d in selected_card.dice_list:
@@ -181,14 +232,11 @@ def render_slot_strip(unit: Unit, opponent: Unit, slot_idx: int, key_prefix: str
                     dice_display.append(f":{color}[{icon} {d.min_val}-{d.max_val}]")
                 st.markdown(" ".join(dice_display))
 
-            # 2. Описание (Эффекты)
             desc_text = []
-            # Скрипты карты (On Use)
             if "on_use" in selected_card.scripts:
                 for s in selected_card.scripts["on_use"]:
                     desc_text.append(f"On Use: {_format_script_text(s['script_id'], s.get('params', {}))}")
 
-            # Скрипты кубиков (On Hit и т.д.)
             for d in selected_card.dice_list:
                 if d.scripts:
                     for trig, effs in d.scripts.items():
@@ -196,7 +244,6 @@ def render_slot_strip(unit: Unit, opponent: Unit, slot_idx: int, key_prefix: str
                             t_name = trig.replace("_", " ").title()
                             desc_text.append(f"{t_name}: {_format_script_text(e['script_id'], e.get('params', {}))}")
 
-            # Если есть ручное описание, добавляем его тоже
             if selected_card.description:
                 st.caption(f"📝 {selected_card.description}")
 
@@ -213,18 +260,13 @@ def render_simulator_page():
     <style>
         .block-container { padding-top: 1rem !important; padding-bottom: 2rem !important; }
         h2 { margin-top: 0 !important; padding-top: 0 !important; }
-        /* Картинка: ограничение 200px */
         [data-testid="stImage"] img { 
             object-fit: cover; 
             border-radius: 12px; 
             width: 100%;
             max-height: 200px !important;
         }
-        /* Уменьшаем отступы внутри контейнеров слотов */
-        div[data-testid="stVerticalBlockBorderWrapper"] > div {
-            gap: 0.5rem;
-        }
-        .stDivider { margin-top: 0.5rem; margin-bottom: 0.5rem; }
+        .streamlit-expanderHeader { padding-top: 0.5rem; padding-bottom: 0.5rem; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -240,41 +282,48 @@ def render_simulator_page():
     p1.recalculate_stats()
     p2.recalculate_stats()
 
-    col_l, col_r = st.columns(2, gap="medium")
+    # SYNC STATE FIRST
+    if p1.active_slots: sync_state_from_widgets(p1, "p1")
+    if p2.active_slots: sync_state_from_widgets(p2, "p2")
 
-    # --- ЛЕВАЯ СТОРОНА (P1) ---
-    with col_l:
+    # PRECALCULATE WITH REAL LOGIC
+    precalculate_interactions(p1, p2)
+
+    col_info_l, col_info_r = st.columns(2, gap="medium")
+
+    with col_info_l:
         c1, c2 = st.columns([1, 1])
         with c1:
             img = p1.avatar if p1.avatar and os.path.exists(p1.avatar) else "https://placehold.co/150x150/png?text=P1"
             st.image(img, use_container_width=True)
         with c2:
             render_unit_stats(p1)
-
         render_combat_info(p1)
 
-        if p1.active_slots:
-            st.subheader(f"Actions ({len(p1.active_slots)})")
-            # Рендерим слоты вертикальным списком
-            for i in range(len(p1.active_slots)):
-                render_slot_strip(p1, p2, i, "p1")
-        elif st.session_state['phase'] == 'planning':
-            st.warning("No slots!")
-
-    # --- ПРАВАЯ СТОРОНА (P2) ---
-    with col_r:
+    with col_info_r:
         c1, c2 = st.columns([1, 1])
         with c1:
             render_unit_stats(p2)
         with c2:
             img = p2.avatar if p2.avatar and os.path.exists(p2.avatar) else "https://placehold.co/150x150/png?text=P2"
             st.image(img, use_container_width=True)
-
         render_combat_info(p2)
 
+    st.divider()
+
+    col_act_l, col_act_r = st.columns(2, gap="medium")
+
+    with col_act_l:
+        if p1.active_slots:
+            st.subheader(f"Actions ({len(p1.active_slots)})")
+            for i in range(len(p1.active_slots)):
+                render_slot_strip(p1, p2, i, "p1")
+        elif st.session_state['phase'] == 'planning':
+            st.warning("No slots!")
+
+    with col_act_r:
         if p2.active_slots:
             st.subheader(f"Actions ({len(p2.active_slots)})")
-            # Рендерим слоты вертикальным списком
             for i in range(len(p2.active_slots)):
                 render_slot_strip(p2, p1, i, "p2")
 
@@ -287,12 +336,9 @@ def render_simulator_page():
         else:
             st.button("⚔️ EXECUTE TURN", type="primary", on_click=execute_combat, use_container_width=True)
 
-    # --- REPORT ---
     st.subheader("📜 Battle Report")
     if st.session_state.get('turn_message'):
         st.info(st.session_state['turn_message'])
-
-    st.caption("Легенда: ⚔️ = Clash, 🏹 = One-Sided. ✋ = Aggro (принудительный перехват)")
 
     if st.session_state.get('battle_logs'):
         for log in st.session_state['battle_logs']:
