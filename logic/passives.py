@@ -33,8 +33,31 @@ class PassiveAlleyDemon(BasePassive):
     name = "Демон переулка"
     description = "После успешного уворота наносит атакующему урон (HP), равный половине итогового значения атаки противника."
 
+
+class PassiveDaughterOfBackstreets(BasePassive):
+    id = "daughter_of_backstreets"
+    name = "Дочь переулка"
+    description = "Медленно восстанавливает 1 HP, 1 SP и 1 Stagger в конце каждого хода."
+
+    def on_round_end(self, unit, log_func):
+        # 1. Восстанавливаем HP (используем встроенный метод для учета бонусов лечения)
+        unit.heal_hp(1)
+
+        # 2. Восстанавливаем SP
+        if unit.current_sp < unit.max_sp:
+            unit.current_sp += 1
+
+        # 3. Восстанавливаем Stagger
+        if unit.current_stagger < unit.max_stagger:
+            unit.current_stagger += 1
+
+        # Лог для отчета
+        if log_func:
+            log_func(f"🏙️ {self.name}: Восстановлено 1 HP, 1 SP, 1 Stagger")
+
 # --- РЕЕСТР ---
 PASSIVE_REGISTRY = {
     "wag_tail": PassiveTailSwipe(),
-    "alley_demon": PassiveAlleyDemon()
+    "alley_demon": PassiveAlleyDemon(),
+    "daughter_of_backstreets": PassiveDaughterOfBackstreets(),
 }
