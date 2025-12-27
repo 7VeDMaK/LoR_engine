@@ -1,282 +1,192 @@
-from core.enums import DiceType
+# logic/clash_flow.py
+from core.models import DiceType
 from logic.clash_mechanics import ClashMechanicsMixin
-from logic.passives import PASSIVE_REGISTRY
-from logic.talents import TALENT_REGISTRY
 
 
 class ClashFlowMixin(ClashMechanicsMixin):
     """
-    Уровень 2: Сценарии стычек (Speed Diff, Discard, Clash Loop).
-    Исправлен поиск пассивок защиты (теперь не прерывается на пустых результатах).
+    Уровень 2: Сценарии стычек.
+    Формирует структуру лога для UI: Left (P1) vs Right (P2).
     """
 
-    # === ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ===
+    # logic/clash_flow.py (Начало метода _resolve_card_clash)
 
-    def _find_virtual_die(self, target, incoming_die):
-        """Ищет, есть ли у цели пассивка, дающая защитный кубик (Counter)."""
-        if target.is_staggered(): return None
-
-        # Проверяем все пассивки и таланты
-        for pid in target.passives + target.talents:
-            obj = PASSIVE_REGISTRY.get(pid) or TALENT_REGISTRY.get(pid)
-            if obj and hasattr(obj, "get_virtual_defense_die"):
-                # ВАЖНОЕ ИСПРАВЛЕНИЕ:
-                # Мы вызываем метод, и если он вернул None — ищем ДАЛЬШЕ.
-                # Раньше мы сразу возвращали None, прерывая цикл.
-                die = obj.get_virtual_defense_die(target, incoming_die)
-                if die:
-                    return die
-
-        return None
-
-    def _resolve_defense_clash(self, source_ctx, target, def_die):
-        """
-        Разыгрывает столкновение: Атака (Source) vs Виртуальная Защита (Def Die).
-        Возвращает: (строка лога, сохранился_ли_кубик_защиты)
-        """
-        def_ctx = self._create_roll_context(target, source_ctx.source, def_die)
-        val_atk = source_ctx.final_value
-        val_def = def_ctx.final_value
-
-        res_str = f"🛡️Auto-Def {val_def} vs ⚔️{val_atk}"
-        def_logs_str = "\n".join([f"• 🛡️ {target.name} (Auto): {l}" for l in def_ctx.log])
-
-        full_log = ""
-        surviving_die = None
-
-        if val_def > val_atk:
-            # ЗАЩИТА ПОБЕДИЛА
-            self._handle_clash_win(def_ctx)
-            self._handle_clash_lose(source_ctx)
-
-            diff = max(0, val_def - val_atk)
-            self._execute_clash_interaction(def_ctx, source_ctx, diff)
-
-            full_log = f"{res_str} | **Defended!**\n{def_logs_str}"
-
-            # Сохраняем кубик, если это Evade
-            if def_die.dtype == DiceType.EVADE:
-                surviving_die = def_die
-                full_log += "\n• 💨 Уклонение сохранилось!"
-
-        elif val_atk > val_def:
-            # ЗАЩИТА ПРОБИТА
-            self._handle_clash_win(source_ctx)
-            self._handle_clash_lose(def_ctx)
-
-            diff = max(0, val_atk - val_def)
-            self._execute_clash_interaction(source_ctx, def_ctx, diff)
-
-            full_log = f"{res_str} | **Defense Broken!**\n{def_logs_str}"
-            surviving_die = None
-
-        else:
-            # НИЧЬЯ
-            full_log = f"{res_str} | Draw\n{def_logs_str}"
-            surviving_die = None
-
-        return full_log, surviving_die
-
-    # === ОСНОВНЫЕ МЕТОДЫ ===
-
-    def _resolve_card_clash(self, attacker, defender, round_label: str, is_p1_attacker: bool, slot_a: dict,
-                            slot_d: dict):
+    def _resolve_card_clash(self, attacker, defender, round_label: str, is_p1_attacker: bool, slot_a=None, slot_d=None):
         report = []
         ac = attacker.current_card
         dc = defender.current_card
 
-        spd_a = slot_a['speed']
-        spd_d = slot_d['speed']
-
-        force_a = slot_a.get('force_clash', False)
-        force_d = slot_d.get('force_clash', False)
-
-        self._process_card_self_scripts("on_use", attacker, defender)
-        self._process_card_self_scripts("on_use", defender, attacker)
+        # 1. Собираем логи эффектов "При использовании" (On Use)
+        on_use_logs = []
+        self._process_card_self_scripts("on_use", attacker, defender, custom_log_list=on_use_logs)
+        self._process_card_self_scripts("on_use", defender, attacker, custom_log_list=on_use_logs)
 
         max_dice = max(len(ac.dice_list), len(dc.dice_list))
 
         for j in range(max_dice):
-            if attacker.is_dead() or defender.is_dead(): break
+            # ... (дальше идет стандартная проверка на смерть/стаггер, как было) ...
+            atk_alive = not (attacker.is_dead() or attacker.is_staggered())
+            def_alive = not (defender.is_dead() or defender.is_staggered())
 
-            can_a = not attacker.is_staggered()
-            can_d = not defender.is_staggered()
-            if not can_a and not can_d: break
+            if not atk_alive and not def_alive: break
 
-            die_a = ac.dice_list[j] if (j < len(ac.dice_list) and can_a) else None
-            die_d = dc.dice_list[j] if (j < len(dc.dice_list) and can_d) else None
+            die_a = ac.dice_list[j] if (j < len(ac.dice_list) and atk_alive) else None
+            die_d = dc.dice_list[j] if (j < len(dc.dice_list) and def_alive) else None
 
             if not die_a and not die_d: break
 
-            dis_a = False
-            dis_d = False
-
-            if die_a and die_d:
-                # 1. Сброс (A > D + 8)
-                if spd_a >= spd_d + 8:
-                    must_clash = ("hedonism" in attacker.passives) or force_a
-                    if not must_clash:
-                        ctx_a = self._create_roll_context(attacker, defender, die_a)
-                        detail = f"🚫 **Сброс Атаки!** (Spd {spd_a} vs {spd_d})\n"
-                        detail += self._resolve_unopposed(ctx_a, defender)
-                        if ctx_a.log: detail += "\n" + "\n".join([f"• ⚔️ {attacker.name}: {l}" for l in ctx_a.log])
-                        report.append({"round": f"{round_label} (D{j + 1})", "rolls": f"{ctx_a.final_value} vs ❌",
-                                       "details": detail})
-                        continue
-
-                # 2. Сброс (D > A + 8)
-                if spd_d >= spd_a + 8:
-                    must_clash = ("hedonism" in defender.passives) or force_d
-                    if not must_clash:
-                        ctx_d = self._create_roll_context(defender, attacker, die_d)
-                        detail = f"🚫 **Сброс Атаки!** (Spd {spd_d} vs {spd_a})\n"
-                        detail += self._resolve_unopposed(ctx_d, attacker)
-                        if ctx_d.log: detail += "\n" + "\n".join([f"• 🛡️ {defender.name}: {l}" for l in ctx_d.log])
-                        report.append({"round": f"{round_label} (D{j + 1})", "rolls": f"❌ vs {ctx_d.final_value}",
-                                       "details": detail})
-                        continue
-
-                # 3. Помеха (Diff 4+)
-                if spd_a >= spd_d + 4:
-                    dis_d = True
-                elif spd_d >= spd_a + 4:
-                    dis_a = True
-
-            # Броски
-            ctx_a = self._create_roll_context(attacker, defender, die_a, is_disadvantage=dis_a)
-            ctx_d = self._create_roll_context(defender, attacker, die_d, is_disadvantage=dis_d)
-
-            if die_a and die_d:
-                if (spd_a >= spd_d + 8) and (("hedonism" in attacker.passives) or force_a):
-                    ctx_a.log.append("🔒 Lock: Сброс отменен!")
-                if (spd_d >= spd_a + 8) and (("hedonism" in defender.passives) or force_d):
-                    ctx_d.log.append("🔒 Lock: Сброс отменен!")
+            # ... (создание контекстов ctx_a, ctx_d) ...
+            ctx_a = self._create_roll_context(attacker, defender, die_a)
+            ctx_d = self._create_roll_context(defender, attacker, die_d)
 
             val_a = ctx_a.final_value if ctx_a else 0
             val_d = ctx_d.final_value if ctx_d else 0
-            res_str = f"{val_a if is_p1_attacker else val_d} vs {val_d if is_p1_attacker else val_a}"
-            detail = ""
 
+            # ... (сбор left_info и right_info остается без изменений) ...
+            left_info = {
+                "unit": attacker.name if is_p1_attacker else defender.name,
+                "card": ac.name if is_p1_attacker else dc.name,
+                "dice": (die_a.dtype.name if die_a else "None") if is_p1_attacker else (
+                    die_d.dtype.name if die_d else "None"),
+                "val": val_a if is_p1_attacker else val_d
+            }
+            right_info = {
+                "unit": defender.name if is_p1_attacker else attacker.name,
+                "card": dc.name if is_p1_attacker else ac.name,
+                "dice": (die_d.dtype.name if die_d else "None") if is_p1_attacker else (
+                    die_a.dtype.name if die_a else "None"),
+                "val": val_d if is_p1_attacker else val_a
+            }
+
+            outcome = ""
+            detail_logs = []
+
+            # === ГЛАВНОЕ ИЗМЕНЕНИЕ ===
+            # Если это первый кубик (j=0), добавляем в его описание логи от "On Use"
+            if j == 0 and on_use_logs:
+                detail_logs.extend(on_use_logs)
+            # =========================
+
+            # ... (далее логика победы/поражения, как было) ...
             if ctx_a and ctx_d:
-                # CLASH
-                diff = abs(val_a - val_d)
                 if val_a > val_d:
-                    detail = f"{attacker.name} Win!"
+                    outcome = f"🏆 {attacker.name} Win"
                     self._handle_clash_win(ctx_a)
                     self._handle_clash_lose(ctx_d)
-                    self._execute_clash_interaction(ctx_a, ctx_d, diff)
+                    self._resolve_clash_interaction(ctx_a, ctx_d, val_a - val_d)
+                # ... (и так далее для остальных условий) ...
                 elif val_d > val_a:
-                    detail = f"{defender.name} Win!"
+                    outcome = f"🏆 {defender.name} Win"
                     self._handle_clash_win(ctx_d)
                     self._handle_clash_lose(ctx_a)
-                    self._execute_clash_interaction(ctx_d, ctx_a, diff)
+                    self._resolve_clash_interaction(ctx_d, ctx_a, val_d - val_a)
                 else:
-                    detail = "Draw!"
+                    outcome = "🤝 Draw"
+
             elif ctx_a:
-                detail = self._resolve_unopposed(ctx_a, defender)
-            elif ctx_d:
-                detail = self._resolve_unopposed(ctx_d, attacker)
-
-            round_logs = []
-            if ctx_a: round_logs.extend([f"⚔️ {attacker.name}: {l}" for l in ctx_a.log])
-            if ctx_d: round_logs.extend([f"🛡️ {defender.name}: {l}" for l in ctx_d.log])
-            if round_logs: detail += "\n" + "\n".join([f"• {l}" for l in round_logs])
-
-            report.append({"round": f"{round_label} (D{j + 1})", "rolls": res_str, "details": detail})
-
-        return report
-
-    def _resolve_one_sided(self, source, target, round_label: str):
-        """
-        Полный цикл односторонней атаки.
-        """
-        report = []
-        card = source.current_card
-        self._process_card_self_scripts("on_use", source, target)
-
-        # 1. ГЕНЕРАЦИЯ ЗАЩИТЫ (ОДИН РАЗ)
-        trigger_die = card.dice_list[0] if card.dice_list else None
-        active_def_die = self._find_virtual_die(target, trigger_die)
-
-        for j, die in enumerate(card.dice_list):
-            if source.is_dead() or source.is_staggered(): break
-            if target.is_dead(): break
-
-            ctx = self._create_roll_context(source, target, die)
-            val = ctx.final_value
-            detail = ""
-
-            # 2. ИСПОЛЬЗУЕМ ЗАЩИТУ
-            if active_def_die:
-                log_res, surviving_die = self._resolve_defense_clash(ctx, target, active_def_die)
-                detail = log_res
-                active_def_die = surviving_die  # Обновляем (сохраняем или теряем)
-            else:
-                # 3. НЕТ ЗАЩИТЫ
-                if die.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]:
-                    self._apply_damage(ctx, None, "hp")
-                    detail = "Unanswered Hit"
+                outcome = f"🏹 {attacker.name} Unanswered"
+                if ctx_a.dice.dtype.name in ["SLASH", "PIERCE", "BLUNT"]:
+                    self._apply_damage(ctx_a, None, "hp")
                 else:
-                    detail = "Defensive Die (Skipped)"
+                    outcome += " (Def)"
 
-            if ctx.log:
-                atk_logs = "\n".join([f"• ⚔️ {source.name}: {l}" for l in ctx.log])
-                detail += "\n" + atk_logs
+            elif ctx_d:
+                outcome = f"🏹 {defender.name} Unanswered"
+                if ctx_d.dice.dtype.name in ["SLASH", "PIERCE", "BLUNT"]:
+                    self._apply_damage(ctx_d, None, "hp")
+                else:
+                    outcome += " (Def)"
 
-            report.append({"round": f"{round_label} (D{j + 1})", "rolls": f"{val}", "details": detail})
+            # Сбор логов от самих кубиков
+            if ctx_a: detail_logs.extend(ctx_a.log)
+            if ctx_d: detail_logs.extend(ctx_d.log)
+
+            report.append({
+                "type": "clash",
+                "round": f"{round_label} (D{j + 1})",
+                "left": left_info,
+                "right": right_info,
+                "outcome": outcome,
+                "details": detail_logs
+            })
 
         return report
 
-    def _resolve_unopposed(self, source_ctx, target):
-        """
-        Разовый безответный удар.
-        """
-        def_die = self._find_virtual_die(target, source_ctx.dice)
-
-        if def_die:
-            log_res, _ = self._resolve_defense_clash(source_ctx, target, def_die)
-            return log_res
-
-        if source_ctx.dice.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]:
-            self._apply_damage(source_ctx, None, "hp")
-            return "Unanswered Hit"
-        else:
-            return "Defensive Die (Skipped)"
-
-    def _execute_clash_interaction(self, winner_ctx, loser_ctx, diff: int):
-        interaction = self._calculate_standard_interaction(winner_ctx, loser_ctx, diff)
-        self._dispatch_event("modify_clash_interaction", winner_ctx, interaction, loser_ctx)
-        self._dispatch_event("modify_clash_interaction_loser", loser_ctx, interaction, winner_ctx)
-
-        if interaction["action"] == "damage":
-            target = interaction["target"]
-            if interaction.get("is_full_attack", False):
-                self._apply_damage(winner_ctx, loser_ctx, interaction["dmg_type"])
-            else:
-                self._deal_direct_damage(winner_ctx, target, interaction["amount"], interaction["dmg_type"])
-        elif interaction["action"] == "evade_success":
-            winner_ctx.log.append("💨 Dodged!")
-
-    def _calculate_standard_interaction(self, winner_ctx, loser_ctx, diff: int) -> dict:
+    def _resolve_clash_interaction(self, winner_ctx, loser_ctx, diff: int):
+        """Определяет эффект победы в зависимости от типа кубиков"""
         w_type = winner_ctx.dice.dtype
         l_type = loser_ctx.dice.dtype
+
+        # Определение типа (Atk, Block, Evade)
         w_is_atk = w_type in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]
         l_is_atk = l_type in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]
         w_is_blk = w_type == DiceType.BLOCK
+        l_is_blk = l_type == DiceType.BLOCK
         w_is_evd = w_type == DiceType.EVADE
-
-        result = {"action": "nothing", "dmg_type": "hp", "amount": 0, "target": loser_ctx.source,
-                  "is_full_attack": False}
+        l_is_evd = l_type == DiceType.EVADE
 
         if w_is_atk:
             if l_is_atk:
-                result.update({"action": "damage", "dmg_type": "hp", "is_full_attack": True})
-            elif l_type == DiceType.BLOCK:
-                result.update({"action": "damage", "dmg_type": "hp", "amount": diff})
-            else:
-                result.update({"action": "damage", "dmg_type": "hp", "is_full_attack": True})
+                self._apply_damage(winner_ctx, loser_ctx, "hp")
+            elif l_is_blk:
+                damage_amt = diff
+                self._deal_direct_damage(winner_ctx, loser_ctx.source, damage_amt, "hp")
+            elif l_is_evd:
+                self._apply_damage(winner_ctx, loser_ctx, "hp")
+
         elif w_is_blk:
-            result.update({"action": "damage", "dmg_type": "stagger", "amount": diff})
+            if l_is_atk:
+                damage_amt = diff
+                self._deal_direct_damage(winner_ctx, loser_ctx.source, damage_amt, "stagger")
+            elif l_is_blk:
+                damage_amt = diff
+                self._deal_direct_damage(winner_ctx, loser_ctx.source, damage_amt, "stagger")
+            elif l_is_evd:
+                damage_amt = diff
+                self._deal_direct_damage(winner_ctx, loser_ctx.source, damage_amt, "stagger")
+
         elif w_is_evd:
-            result.update({"action": "evade_success"})
-        return result
+            winner_ctx.log.append("💨 Dodged!")
+
+    def _resolve_one_sided(self, source, target, round_label: str):
+        report = []
+        card = source.current_card
+
+        # 1. Ловим логи
+        on_use_logs = []
+        self._process_card_self_scripts("on_use", source, target, custom_log_list=on_use_logs)
+
+        for j, die in enumerate(card.dice_list):
+            if source.is_dead() or target.is_dead() or source.is_staggered(): break
+
+            ctx = self._create_roll_context(source, target, die)
+
+            left_info = {
+                "unit": source.name, "card": card.name,
+                "dice": die.dtype.name, "val": ctx.final_value
+            }
+            right_info = {
+                "unit": target.name, "card": "---", "dice": "None", "val": 0
+            }
+
+            detail = "Unopposed"
+            if die.dtype.name in ["SLASH", "PIERCE", "BLUNT"]:
+                self._apply_damage(ctx, None, "hp")
+            else:
+                detail = "Defensive (Skipped)"
+
+            # Собираем все логи
+            all_logs = []
+            # Если первый дайс - добавляем On Use
+            if j == 0 and on_use_logs:
+                all_logs.extend(on_use_logs)
+            all_logs.extend(ctx.log)
+
+            report.append({
+                "type": "onesided",
+                "round": f"{round_label} (D{j + 1})",
+                "left": left_info, "right": right_info,
+                "outcome": detail, "details": all_logs
+            })
+
+        return report

@@ -1,18 +1,17 @@
-import streamlit as st
-import sys
-import random
 import os
-from io import StringIO
+import sys
 from contextlib import contextmanager
+from io import StringIO
 
-from core.models import Card, Unit, DiceType
+import streamlit as st
+
 from core.library import Library
+from core.models import Unit, DiceType
 from logic.clash import ClashSystem
-from logic.statuses import StatusManager
 # === ИМПОРТ ОБОИХ РЕЕСТРОВ ===
 from logic.passives import PASSIVE_REGISTRY
+from logic.statuses import StatusManager
 from logic.talents import TALENT_REGISTRY
-
 from ui.components import render_unit_stats, render_combat_info, _format_script_text
 from ui.styles import TYPE_ICONS, TYPE_COLORS
 
@@ -443,14 +442,71 @@ def render_simulator_page():
             st.button("⚔️ EXECUTE TURN", type="primary", on_click=execute_combat, width='stretch')
 
     st.subheader("📜 Battle Report")
+
     if st.session_state.get('turn_message'):
         st.info(st.session_state['turn_message'])
 
-    if st.session_state.get('battle_logs'):
-        for log in st.session_state['battle_logs']:
-            with st.container(border=True):
-                c1, c2, c3 = st.columns([1, 2, 4])
-                c1.markdown(f"**{log.get('round')}**")
-                c2.caption(log.get('rolls'))
-                # Использование markdown позволяет отображать жирный шрифт и переносы строк в логах
-                c3.markdown(log.get('details'))
+    logs = st.session_state.get('battle_logs', [])
+
+    if logs:
+        for log in logs:
+            # Проверяем формат лога: если есть ключ 'left' - это новый формат
+            if "left" in log:
+                with st.container(border=True):
+                    # Три колонки: [Карты/Иконки] [Роллы] [Описание]
+                    c_cards, c_rolls, c_desc = st.columns([3, 1.5, 4])
+
+                    left = log['left']
+                    right = log['right']
+
+                    # 1. Колонка КАРТ (Left vs Right)
+                    with c_cards:
+                        # Получаем иконки типов кубиков
+                        icon_l = TYPE_ICONS.get(DiceType[left['dice']], "") if left['dice'] != "None" else ""
+                        icon_r = TYPE_ICONS.get(DiceType[right['dice']], "") if right['dice'] != "None" else ""
+
+                        # Красивый вывод через Markdown/HTML
+                        st.markdown(f"""
+                            **{left['unit']}** <span style='color:gray; font-size:0.8em'>({left['card']})</span>  
+                            ### {icon_l} vs {icon_r}  
+                            **{right['unit']}** <span style='color:gray; font-size:0.8em'>({right['card']})</span>
+                            """, unsafe_allow_html=True)
+
+                    # 2. Колонка ЧИСЕЛ (Центр)
+                    with c_rolls:
+                        st.markdown(f"<h2 style='text-align: center; margin: 0;'>{left['val']}</h2>",
+                                    unsafe_allow_html=True)
+                        st.markdown(f"<p style='text-align: center; color: gray;'>VS</p>", unsafe_allow_html=True)
+                        st.markdown(f"<h2 style='text-align: center; margin: 0;'>{right['val']}</h2>",
+                                    unsafe_allow_html=True)
+
+                    # 3. Колонка ОПИСАНИЯ (История справа)
+                    with c_desc:
+                        st.caption(f"Round: {log['round']} | {log['outcome']}")
+
+                        # Разделяем логи на "Важные" и "Модификаторы"
+                        effects = []
+                        modifiers = []
+
+                        for entry in log['details']:
+                            # Если строка выглядит как "[Reason] +X", считаем модификатором
+                            if "[" in entry and "]" in entry:
+                                modifiers.append(entry)
+                            else:
+                                effects.append(entry)
+
+                        # Сначала выводим важные эффекты (урон, статусы)
+                        if effects:
+                            for eff in effects:
+                                st.markdown(f"➤ {eff}")
+
+                        # Модификаторы прячем в спойлер или пишем мелко
+                        if modifiers:
+                            with st.expander("Modifiers", expanded=False):
+                                for mod in modifiers:
+                                    st.caption(mod)
+
+            else:
+                # Старый формат (события начала/конца боя)
+                with st.container():
+                    st.caption(f"⏱️ {log.get('round')} | {log.get('details')}")

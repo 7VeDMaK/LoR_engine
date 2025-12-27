@@ -37,14 +37,21 @@ class ClashMechanicsMixin:
             params = script_data.get("params", {})
             if script_id in SCRIPTS_REGISTRY: SCRIPTS_REGISTRY[script_id](ctx, params)
 
-    def _process_card_self_scripts(self, trigger: str, source, target):
+    def _process_card_self_scripts(self, trigger: str, source, target, custom_log_list=None):
         card = source.current_card
         if not card or not card.scripts or trigger not in card.scripts: return
-        ctx = RollContext(source=source, target=target, dice=None, final_value=0, log=self.logs)
+
+        # Если нам дали список, пишем в него. Если нет — используем self.logs (как раньше)
+        target_log = custom_log_list if custom_log_list is not None else self.logs
+
+        # Создаем контекст с правильным логом
+        ctx = RollContext(source=source, target=target, dice=None, final_value=0, log=target_log)
+
         for script_data in card.scripts[trigger]:
             script_id = script_data.get("script_id")
             params = script_data.get("params", {})
-            if script_id in SCRIPTS_REGISTRY: SCRIPTS_REGISTRY[script_id](ctx, params)
+            if script_id in SCRIPTS_REGISTRY:
+                SCRIPTS_REGISTRY[script_id](ctx, params)
 
     def _create_roll_context(self, source, target, die: Dice, is_disadvantage: bool = False) -> RollContext:
         if not die: return None
