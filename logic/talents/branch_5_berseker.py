@@ -9,7 +9,7 @@ class TalentNakedDefense(BasePassive):
     name = "Встроенная Броня"
     description = "5.1 Если броня не надета (None), резисты становятся равными 1.0."
 
-    def on_combat_start(self, unit, log_func):
+    def on_combat_start(self, unit, log_func, **kwargs):
         if not unit.armor_name or unit.armor_name.lower() in ["none", "нет", "empty", "naked"]:
             unit.hp_resists.slash = 1.0
             unit.hp_resists.pierce = 1.0
