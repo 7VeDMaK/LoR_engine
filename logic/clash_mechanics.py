@@ -88,19 +88,26 @@ class ClashMechanicsMixin:
     def _handle_clash_lose(self, ctx: RollContext):
         self._dispatch_event("on_clash_lose", ctx)
 
-    def _trigger_unit_event(self, event_name, unit, *args):
+    def _trigger_unit_event(self, event_name, unit, *args, **kwargs):
+        """Запускает событие для всех статусов, пассивок и талантов юнита."""
+
+        # 1. Statuses
         for status_id, stack in list(unit.statuses.items()):
             if status_id in STATUS_REGISTRY:
                 handler = getattr(STATUS_REGISTRY[status_id], event_name, None)
-                if handler: handler(unit, *args)
+                if handler: handler(unit, *args, **kwargs)
+
+        # 2. Passives
         for pid in unit.passives:
             if pid in PASSIVE_REGISTRY:
                 handler = getattr(PASSIVE_REGISTRY[pid], event_name, None)
-                if handler: handler(unit, *args)
+                if handler: handler(unit, *args, **kwargs)
+
+        # 3. Talents
         for pid in unit.talents:
             if pid in TALENT_REGISTRY:
                 handler = getattr(TALENT_REGISTRY[pid], event_name, None)
-                if handler: handler(unit, *args)
+                if handler: handler(unit, *args, **kwargs)
 
     def _deal_direct_damage(self, source_ctx: RollContext, target, amount: int, dmg_type: str):
         if amount <= 0: return

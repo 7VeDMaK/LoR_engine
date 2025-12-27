@@ -157,6 +157,28 @@ class RedLycorisStatus(StatusEffect):
         # Логика "Добавить 0.5 S-клеток" пока пропускаем или добавляем в лог
         return []
 
+
+# === ЗЛОВЕЩАЯ АУРА (Sinister Aura) ===
+class SinisterAuraStatus(StatusEffect):
+    id = "sinister_aura"
+
+    def on_roll(self, ctx: RollContext, stack: int):
+        # Эффект срабатывает, когда персонаж под Аурой (source) АТАКУЕТ
+        if ctx.dice.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]:
+
+            # Цель атаки (Rein)
+            target = ctx.target
+
+            if target:
+                # Формула: [Рассудок Рейна / 10]
+                # Берем текущий SP цели. Если он отрицательный, урон 0.
+                dmg_val = max(0, target.current_sp) // 10
+
+                if dmg_val > 0:
+                    # Враг (source) теряет SP
+                    ctx.source.take_sanity_damage(dmg_val)
+                    ctx.log.append(f"🌑 Аура: -{dmg_val} SP (от величия {target.name})")
+
 STATUS_REGISTRY = {
     "strength": StrengthStatus(),
     "bleed": BleedStatus(),
@@ -165,4 +187,5 @@ STATUS_REGISTRY = {
     "self_control": SelfControlStatus(),
     "smoke": SmokeStatus(),
     "red_lycoris": RedLycorisStatus(),
+    "sinister_aura": SinisterAuraStatus(),
 }

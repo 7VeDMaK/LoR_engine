@@ -8,7 +8,7 @@ class BasePassive:
     cooldown = 0
     duration = 0
 
-    def on_combat_start(self, unit, log_func): pass
+    def on_combat_start(self, unit, log_func, **kwargs): pass
 
     def on_combat_end(self, unit, log_func): pass
 

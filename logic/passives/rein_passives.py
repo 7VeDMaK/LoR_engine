@@ -1,4 +1,5 @@
 import math
+from turtle import st
 
 from logic.passives.base_passive import BasePassive
 
@@ -8,7 +9,7 @@ class PassiveSCells(BasePassive):
     name = "S-клетки"
     description = "В начале боя восстанавливает 10 HP за каждый имеющийся слот скорости."
 
-    def on_combat_start(self, unit, log_func):
+    def on_combat_start(self, unit, log_func, **kwargs):
         # Считаем количество активных слотов (кубиков скорости)
         dice_count = len(unit.active_slots)
 
@@ -37,7 +38,7 @@ class PassiveNewDiscovery(BasePassive):
             "backstab_take": -10
         }
 
-    def on_combat_start(self, unit, log_func):
+    def on_combat_start(self, unit, log_func, **kwargs):
         if log_func:
             log_func(f"👁️ {self.name}: Сенсоры активны.")
 
@@ -81,7 +82,7 @@ class TalentRedLycoris(BasePassive):
             log_func(f"🩸 {self.name}: Активирован! Иммунитет и синхронизация.")
         return True
 
-    def on_combat_start(self, unit, log_func):
+    def on_combat_start(self, unit, log_func, **kwargs):
         # Если статус активен, запускаем регенерацию от кубиков
         if unit.get_status("red_lycoris") > 0:
             dice_count = len(unit.active_slots)
@@ -101,3 +102,31 @@ class TalentRedLycoris(BasePassive):
             if log_func:
                 log_func(
                     f"🩸 Ликорис ({dice_count} куб.): Восстановлено {int(pct * 100)}% ({h_amt} HP, {s_amt} SP, {stg_amt} Stg)")
+
+
+# ==========================================
+# 5.8 Тень Величия (Shadow of Majesty)
+# ==========================================
+class TalentShadowOfMajesty(BasePassive):
+    id = "shadow_majesty"
+    name = "Тень Величия"
+    description = "Пассивно: +5 Красноречия. Аура на слабых врагов (-SP при атаке)."
+    is_active_ability = False
+
+    def on_calculate_stats(self, unit) -> dict:
+        return {"eloquence": 5}
+
+    def on_combat_start(self, unit, log_func, **kwargs):
+        # ТЕПЕРЬ МЫ БЕРЕМ ОППОНЕНТА ИЗ АРГУМЕНТОВ, А НЕ ИЗ ST.SESSION_STATE
+        opponent = kwargs.get("opponent")
+
+        if opponent:
+            threshold = unit.level // 2
+
+            if opponent.level < threshold:
+                opponent.add_status("sinister_aura", 1, duration=99)
+                if log_func:
+                    log_func(f"🌑 {self.name}: {opponent.name} (Lvl {opponent.level}) подавлен Величием")
+            else:
+                if log_func:
+                    log_func(f"🛡️ {self.name}: {opponent.name} (Lvl {opponent.level}) сопротивляется Ауре")

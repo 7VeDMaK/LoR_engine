@@ -89,7 +89,7 @@ class PassiveBlessingOfWind(BasePassive):
     name = "Тату 'Благословение Ветра'"
     description = "Пассивно: +1 к Атаке и Уклонению за каждые 5 Дыма. Лимит Дыма увеличен на 5."
 
-    def on_combat_start(self, unit, log_func):
+    def on_combat_start(self, unit, log_func, **kwargs):
         # Увеличиваем лимит дыма в памяти юнита. SmokeStatus это увидит.
         unit.memory['smoke_limit_bonus'] = 5
         if log_func: log_func(f"🌬️ **{self.name}**: Лимит дыма увеличен до 15")
@@ -116,7 +116,7 @@ class PassiveLiveFastDieYoung(BasePassive):
     name = "Живи быстро, умирай молодым"
     description = "Каждый кубик скорости даёт +1 к Силе и Стойкости в начале сцены. +1 Дым за победу в столкновении атакой."
 
-    def on_combat_start(self, unit, log_func):
+    def on_combat_start(self, unit, log_func, **kwargs):
         # ИСПРАВЛЕНИЕ: Считаем реальные активные слоты (unit.active_slots),
         # а не базовые характеристики. Это учитывает Ярость, Ускорение и другие бонусы.
         slots_count = len(unit.active_slots) if unit.active_slots else 1
