@@ -155,6 +155,13 @@ class UnitCombatMixin:
                     'locked': True
                 })
 
+        if self.get_status("red_lycoris") > 0:
+            for slot in self.active_slots:
+                slot['prevent_redirection'] = True
+                # Визуальная пометка для игрока
+                if not slot.get('source_effect'):
+                    slot['source_effect'] = "Lycoris 🩸"
+
         # === ТАЛАНТ: МАХНУТЬ ХВОСТИКОМ (Tail Swipe) ===
         if "wag_tail" in self.passives:
             # Берем значения скорости как для основного кубика
@@ -186,9 +193,14 @@ class UnitCombatMixin:
             })
 
     def is_staggered(self) -> bool:
+        if self.get_status("red_lycoris") > 0:
+            return False
         return self.current_stagger <= 0
 
     def is_dead(self) -> bool:
+        if self.get_status("red_lycoris") > 0:
+            return False
+
         return self.current_hp <= 0
 
 

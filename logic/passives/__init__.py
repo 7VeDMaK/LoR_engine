@@ -1,6 +1,6 @@
 from logic.passives.lilith_passives import PassiveHedonism, PassiveWagTail, PassiveBackstreetDemon, \
     PassiveDaughterOfBackstreets, PassiveBlessingOfWind, PassiveLiveFastDieYoung
-from logic.passives.rein_passives import PassiveSCells, PassiveNewDiscovery
+from logic.passives.rein_passives import PassiveSCells, PassiveNewDiscovery, TalentRedLycoris
 
 # === РЕГИСТРАЦИЯ ===
 PASSIVE_REGISTRY = {
@@ -12,4 +12,5 @@ PASSIVE_REGISTRY = {
     "live_fast_die_young": PassiveLiveFastDieYoung(),
     "s_cells": PassiveSCells(),
     "new_discovery": PassiveNewDiscovery(),
+    "red_lycoris": TalentRedLycoris(),
 }

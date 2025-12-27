@@ -12,9 +12,9 @@
     },
     "deck": [],
     "base_stats": {
-        "current_hp": 101,
+        "current_hp": 188,
         "current_sp": 62,
-        "current_stagger": 75
+        "current_stagger": 94
     },
     "defense": {
         "armor_name": "Standard Fixer Suit",
@@ -31,9 +31,9 @@
         }
     },
     "attributes": {
-        "strength": 15,
+        "strength": 0,
         "endurance": 30,
-        "agility": 1,
+        "agility": 0,
         "wisdom": 0,
         "psych": 0
     },
@@ -57,7 +57,8 @@
     },
     "passives": [
         "s_cells",
-        "new_discovery"
+        "new_discovery",
+        "red_lycoris"
     ],
     "talents": [],
     "level_rolls": {

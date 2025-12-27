@@ -1,3 +1,5 @@
+import math
+
 from logic.passives.base_passive import BasePassive
 
 
@@ -38,3 +40,64 @@ class PassiveNewDiscovery(BasePassive):
     def on_combat_start(self, unit, log_func):
         if log_func:
             log_func(f"👁️ {self.name}: Сенсоры активны.")
+
+
+# ==========================================
+# 5.7 Красный Ликорис (Red Lycoris)
+# ==========================================
+class TalentRedLycoris(BasePassive):
+    id = "red_lycoris"
+    name = "Красный Ликорис"
+    description = (
+        "Активно (при Stagger < 50%): Переход в состояние жизни и смерти на 4 цикла.\n"
+        "Эффекты: Полный иммунитет к урону и эффектам. Инициатива равна противнику.\n"
+        "Действия восстанавливают 5% HP/SP/Stagger.\n"
+        "Нельзя перенаправлять атаки. Перезарядка 7 ходов."
+    )
+    is_active_ability = True
+    cooldown = 7
+    duration = 4
+
+    def activate(self, unit, log_func):
+        if unit.cooldowns.get(self.id, 0) > 0:
+            return False
+
+        stagger_pct = unit.current_stagger / unit.max_stagger
+        if stagger_pct > 0.5:
+            if log_func: log_func(f"❌ {self.name}: Выдержка слишком высока ({int(stagger_pct * 100)}%)")
+            return False
+
+        # Очистка (Cleanse)
+        keys_to_remove = list(unit.statuses.keys())
+        for k in keys_to_remove:
+            unit.remove_status(k)
+        if log_func and keys_to_remove:
+            log_func(f"✨ Сброс статусов: {', '.join(keys_to_remove)}")
+
+        unit.add_status("red_lycoris", 1, duration=self.duration)
+        unit.cooldowns[self.id] = self.cooldown
+
+        if log_func:
+            log_func(f"🩸 {self.name}: Активирован! Иммунитет и синхронизация.")
+        return True
+
+    def on_combat_start(self, unit, log_func):
+        # Если статус активен, запускаем регенерацию от кубиков
+        if unit.get_status("red_lycoris") > 0:
+            dice_count = len(unit.active_slots)
+            if dice_count == 0: return
+
+            # 5% за каждый кубик
+            pct = 0.05 * dice_count
+
+            h_amt = math.ceil(unit.max_hp * pct)
+            s_amt = math.ceil(unit.max_sp * pct)
+            stg_amt = math.ceil(unit.max_stagger * pct)
+
+            unit.heal_hp(h_amt)
+            unit.current_sp = min(unit.max_sp, unit.current_sp + s_amt)
+            unit.current_stagger = min(unit.max_stagger, unit.current_stagger + stg_amt)
+
+            if log_func:
+                log_func(
+                    f"🩸 Ликорис ({dice_count} куб.): Восстановлено {int(pct * 100)}% ({h_amt} HP, {s_amt} SP, {stg_amt} Stg)")

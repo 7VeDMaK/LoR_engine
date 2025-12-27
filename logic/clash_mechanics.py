@@ -104,7 +104,9 @@ class ClashMechanicsMixin:
 
     def _deal_direct_damage(self, source_ctx: RollContext, target, amount: int, dmg_type: str):
         if amount <= 0: return
-
+        if target.get_status("red_lycoris") > 0:
+            source_ctx.log.append(f"🚫 {target.name} Immune (Lycoris)")
+            return
         if dmg_type == "hp":
             dtype_name = source_ctx.dice.dtype.value.lower()
             res = getattr(target.hp_resists, dtype_name, 1.0)
@@ -145,6 +147,11 @@ class ClashMechanicsMixin:
     def _apply_damage(self, attacker_ctx: RollContext, defender_ctx: RollContext, dmg_type: str = "hp"):
         attacker = attacker_ctx.source
         defender = attacker_ctx.target or attacker_ctx.target
+
+        # === ПРОВЕРКА ИММУНИТЕТА ДО ВСЕГО ===
+        if defender.get_status("red_lycoris") > 0:
+            attacker_ctx.log.append(f"🚫 {defender.name} Immune to Attack (Lycoris)")
+            return
 
         self._dispatch_event("on_hit", attacker_ctx)
 

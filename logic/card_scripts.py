@@ -12,6 +12,14 @@ def apply_status(context: 'RollContext', params: dict):
     target_type = params.get("target", "target")
     duration = int(params.get("duration", 1))
 
+    unit_to_affect = context.target if target_type == "target" else context.source
+    if not unit_to_affect: return
+
+    # === ИММУНИТЕТ ===
+    if unit_to_affect.get_status("red_lycoris") > 0 and status_name not in ["red_lycoris"]:
+        context.log.append(f"🚫 {unit_to_affect.name} Immune to {status_name}")
+        return
+
     # Хак для Дыма (Smoke) - он вечный
     if status_name == "smoke": duration = 99
 
@@ -23,6 +31,8 @@ def apply_status(context: 'RollContext', params: dict):
     elif target_type == "all":
         if context.source: targets.append(context.source)
         if context.target: targets.append(context.target)
+
+
 
     if not status_name: return
 

@@ -1,3 +1,4 @@
+import math
 import random
 from logic.context import RollContext
 from core.models import DiceType
@@ -139,6 +140,23 @@ class SmokeStatus(StatusEffect):
 
         return msgs
 
+# === КРАСНЫЙ ЛИКОРИС (STATUS) ===
+class RedLycorisStatus(StatusEffect):
+    id = "red_lycoris"
+
+    def on_calculate_stats(self, unit) -> dict:
+        # Даем огромную инициативу, чтобы "сравняться" (быть не медленнее)
+        # А также дикий резист к урону, чтобы эмулировать иммунитет через modifiers
+        return {
+            "initiative": 999,       # Всегда первый (но prevent_redirection не даст перехватить)
+            "damage_take": -9999,    # Технический иммунитет к урону
+        }
+
+    def on_turn_end(self, unit, stack) -> list[str]:
+        # По окончании действия (когда duration станет 0 и статус пропадет)
+        # Логика "Добавить 0.5 S-клеток" пока пропускаем или добавляем в лог
+        return []
+
 STATUS_REGISTRY = {
     "strength": StrengthStatus(),
     "bleed": BleedStatus(),
@@ -146,4 +164,5 @@ STATUS_REGISTRY = {
     "paralysis": ParalysisStatus(),
     "self_control": SelfControlStatus(),
     "smoke": SmokeStatus(),
+    "red_lycoris": RedLycorisStatus(),
 }
