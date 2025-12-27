@@ -4,19 +4,12 @@ from logic.clash_mechanics import ClashMechanicsMixin
 
 
 class ClashFlowMixin(ClashMechanicsMixin):
-    """
-    Уровень 2: Сценарии стычек.
-    Формирует структуру лога для UI: Left (P1) vs Right (P2).
-    """
-
-    # logic/clash_flow.py (Начало метода _resolve_card_clash)
 
     def _resolve_card_clash(self, attacker, defender, round_label: str, is_p1_attacker: bool, slot_a=None, slot_d=None):
         report = []
         ac = attacker.current_card
         dc = defender.current_card
 
-        # 1. Собираем логи эффектов "При использовании" (On Use)
         on_use_logs = []
         self._process_card_self_scripts("on_use", attacker, defender, custom_log_list=on_use_logs)
         self._process_card_self_scripts("on_use", defender, attacker, custom_log_list=on_use_logs)
@@ -24,7 +17,6 @@ class ClashFlowMixin(ClashMechanicsMixin):
         max_dice = max(len(ac.dice_list), len(dc.dice_list))
 
         for j in range(max_dice):
-            # ... (дальше идет стандартная проверка на смерть/стаггер, как было) ...
             atk_alive = not (attacker.is_dead() or attacker.is_staggered())
             def_alive = not (defender.is_dead() or defender.is_staggered())
 
@@ -35,46 +27,48 @@ class ClashFlowMixin(ClashMechanicsMixin):
 
             if not die_a and not die_d: break
 
-            # ... (создание контекстов ctx_a, ctx_d) ...
             ctx_a = self._create_roll_context(attacker, defender, die_a)
             ctx_d = self._create_roll_context(defender, attacker, die_d)
 
             val_a = ctx_a.final_value if ctx_a else 0
             val_d = ctx_d.final_value if ctx_d else 0
 
-            # ... (сбор left_info и right_info остается без изменений) ...
+            # === ОБНОВЛЕННАЯ СТРУКТУРА С ДИАПАЗОНАМИ ===
             left_info = {
                 "unit": attacker.name if is_p1_attacker else defender.name,
                 "card": ac.name if is_p1_attacker else dc.name,
                 "dice": (die_a.dtype.name if die_a else "None") if is_p1_attacker else (
                     die_d.dtype.name if die_d else "None"),
-                "val": val_a if is_p1_attacker else val_d
+                "val": val_a if is_p1_attacker else val_d,
+                # Добавляем диапазон:
+                "range": (f"{die_a.min_val}-{die_a.max_val}" if die_a else "-") if is_p1_attacker else (
+                    f"{die_d.min_val}-{die_d.max_val}" if die_d else "-")
             }
+
             right_info = {
                 "unit": defender.name if is_p1_attacker else attacker.name,
                 "card": dc.name if is_p1_attacker else ac.name,
                 "dice": (die_d.dtype.name if die_d else "None") if is_p1_attacker else (
                     die_a.dtype.name if die_a else "None"),
-                "val": val_d if is_p1_attacker else val_a
+                "val": val_d if is_p1_attacker else val_a,
+                # Добавляем диапазон:
+                "range": (f"{die_d.min_val}-{die_d.max_val}" if die_d else "-") if is_p1_attacker else (
+                    f"{die_a.min_val}-{die_a.max_val}" if die_a else "-")
             }
+            # ==========================================
 
             outcome = ""
             detail_logs = []
 
-            # === ГЛАВНОЕ ИЗМЕНЕНИЕ ===
-            # Если это первый кубик (j=0), добавляем в его описание логи от "On Use"
             if j == 0 and on_use_logs:
                 detail_logs.extend(on_use_logs)
-            # =========================
 
-            # ... (далее логика победы/поражения, как было) ...
             if ctx_a and ctx_d:
                 if val_a > val_d:
                     outcome = f"🏆 {attacker.name} Win"
                     self._handle_clash_win(ctx_a)
                     self._handle_clash_lose(ctx_d)
                     self._resolve_clash_interaction(ctx_a, ctx_d, val_a - val_d)
-                # ... (и так далее для остальных условий) ...
                 elif val_d > val_a:
                     outcome = f"🏆 {defender.name} Win"
                     self._handle_clash_win(ctx_d)
@@ -97,7 +91,6 @@ class ClashFlowMixin(ClashMechanicsMixin):
                 else:
                     outcome += " (Def)"
 
-            # Сбор логов от самих кубиков
             if ctx_a: detail_logs.extend(ctx_a.log)
             if ctx_d: detail_logs.extend(ctx_d.log)
 
@@ -152,7 +145,6 @@ class ClashFlowMixin(ClashMechanicsMixin):
         report = []
         card = source.current_card
 
-        # 1. Ловим логи
         on_use_logs = []
         self._process_card_self_scripts("on_use", source, target, custom_log_list=on_use_logs)
 
@@ -163,10 +155,12 @@ class ClashFlowMixin(ClashMechanicsMixin):
 
             left_info = {
                 "unit": source.name, "card": card.name,
-                "dice": die.dtype.name, "val": ctx.final_value
+                "dice": die.dtype.name, "val": ctx.final_value,
+                "range": f"{die.min_val}-{die.max_val}"  # Добавлено
             }
             right_info = {
-                "unit": target.name, "card": "---", "dice": "None", "val": 0
+                "unit": target.name, "card": "---", "dice": "None", "val": 0,
+                "range": "-"  # Добавлено
             }
 
             detail = "Unopposed"
@@ -175,11 +169,8 @@ class ClashFlowMixin(ClashMechanicsMixin):
             else:
                 detail = "Defensive (Skipped)"
 
-            # Собираем все логи
             all_logs = []
-            # Если первый дайс - добавляем On Use
-            if j == 0 and on_use_logs:
-                all_logs.extend(on_use_logs)
+            if j == 0 and on_use_logs: all_logs.extend(on_use_logs)
             all_logs.extend(ctx.log)
 
             report.append({

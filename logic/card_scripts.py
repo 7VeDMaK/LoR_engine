@@ -3,12 +3,7 @@ from typing import TYPE_CHECKING
 from core.enums import DiceType
 
 if TYPE_CHECKING:
-    from logic.modifiers import RollContext
-
-
-# Вспомогательная функция для иконок
-def _get_icon(unit, context):
-    return "👤" if unit == context.source else "🎯"
+    from logic.context import RollContext
 
 
 def apply_status(context: 'RollContext', params: dict):
@@ -17,7 +12,7 @@ def apply_status(context: 'RollContext', params: dict):
     target_type = params.get("target", "target")
     duration = int(params.get("duration", 1))
 
-    # Хак для Дыма
+    # Хак для Дыма (Smoke) - он вечный
     if status_name == "smoke": duration = 99
 
     targets = []
@@ -35,15 +30,14 @@ def apply_status(context: 'RollContext', params: dict):
         if not unit: continue
         unit.add_status(status_name, stack, duration=duration)
 
-        # Красивый лог
-        icon = _get_icon(unit, context)
-        context.log.append(f"{icon} **{status_name.capitalize()}** +{stack}")
+        # БЫЛО: 🧪 **Smoke** +1
+        # СТАЛО: 🧪 **Lilit**: +1 Smoke
+        context.log.append(f"🧪 **{unit.name}**: +{stack} {status_name.capitalize()}")
 
 
 def steal_status(context: 'RollContext', params: dict):
     status_name = params.get("status")
     if not status_name: return
-
     thief, victim = context.source, context.target
     if not thief or not victim: return
 
@@ -53,14 +47,18 @@ def steal_status(context: 'RollContext', params: dict):
         duration = 99 if status_name == "smoke" else 1
         thief.add_status(status_name, amount, duration=duration)
 
-        context.log.append(f"✋ **Steal**: Stole {amount} {status_name} from 🎯 → 👤")
+        # БЫЛО: ✋ **Steal**: 5 Smoke from 🎯 → 👤
+        # СТАЛО: ✋ **Lilit** stole 5 Smoke from **Roland**
+        context.log.append(f"✋ **{thief.name}** stole {amount} {status_name} from **{victim.name}**")
+    else:
+        # Можно добавить лог неудачи, если нужно
+        pass
 
 
 def multiply_status(context: 'RollContext', params: dict):
     status_name = params.get("status")
     multiplier = float(params.get("multiplier", 2.0))
     target_type = params.get("target", "target")
-
     unit = context.target if target_type == "target" else context.source
     if not unit: return
 
@@ -69,8 +67,8 @@ def multiply_status(context: 'RollContext', params: dict):
         add = int(current * (multiplier - 1))
         duration = 99 if status_name == "smoke" else 1
         unit.add_status(status_name, add, duration=duration)
-        icon = _get_icon(unit, context)
-        context.log.append(f"✖️ **Multiply**: {status_name} x{multiplier} ({current} → {current + add}) on {icon}")
+
+        context.log.append(f"✖️ **{unit.name}**: {status_name} x{multiplier} (+{add})")
 
 
 def deal_custom_damage(context: 'RollContext', params: dict):
@@ -80,7 +78,6 @@ def deal_custom_damage(context: 'RollContext', params: dict):
     prevent_std = params.get("prevent_standard", False)
 
     base = int(context.final_value * scale)
-
     targets = []
     if target_mode == "target":
         targets.append(context.target)
@@ -92,13 +89,12 @@ def deal_custom_damage(context: 'RollContext', params: dict):
 
     for unit in targets:
         if not unit: continue
-
         if dmg_type == "stagger":
             unit.current_stagger -= base
-            context.log.append(f"😵 **{unit.name}**: -{base} Stagger (Custom)")
+            context.log.append(f"😵 **{unit.name}**: -{base} Stagger")
         elif dmg_type == "hp":
             unit.current_hp -= base
-            context.log.append(f"💥 **{unit.name}**: -{base} HP (Custom)")
+            context.log.append(f"💥 **{unit.name}**: -{base} HP")
 
     if prevent_std:
         context.damage_multiplier = 0.0
@@ -110,9 +106,16 @@ def restore_hp(context: 'RollContext', params: dict):
     unit = context.source if target_type == "self" else context.target
 
     if unit:
-        heal = unit.heal_hp(amount)
-        icon = _get_icon(unit, context)
-        context.log.append(f"💚 {icon} **Heal** +{heal} HP")
+        try:
+            # Пытаемся передать source_unit, если метод обновлен
+            heal = unit.heal_hp(amount, source_unit=context.source)
+        except TypeError:
+            # Если нет, по старинке
+            heal = unit.heal_hp(amount)
+
+        # БЫЛО: 💚 Heal +5 HP
+        # СТАЛО: 💚 **Roland**: Healed +5 HP
+        context.log.append(f"💚 **{unit.name}**: Healed +{heal} HP")
 
 
 SCRIPTS_REGISTRY = {

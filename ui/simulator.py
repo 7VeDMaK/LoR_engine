@@ -69,6 +69,113 @@ def roll_phase():
     st.session_state['turn_message'] = "🎲 Speed Rolled!"
 
 
+def step_start():
+    p1 = st.session_state['attacker']
+    p2 = st.session_state['defender']
+    sys_clash = ClashSystem()
+
+    # 1. Prepare
+    init_logs, actions = sys_clash.prepare_turn(p1, p2)
+
+    st.session_state['battle_logs'] = init_logs
+    st.session_state['turn_actions'] = actions  # Сохраняем очередь
+    st.session_state['executed_p1'] = set()
+    st.session_state['executed_p2'] = set()
+    st.session_state['turn_phase'] = 'fighting'  # Меняем фазу
+    st.session_state['action_idx'] = 0
+
+
+def step_next():
+    actions = st.session_state['turn_actions']
+    idx = st.session_state['action_idx']
+
+    if idx < len(actions):
+        sys_clash = ClashSystem()
+        act = actions[idx]
+
+        # Важно: объекты юнитов в act['unit'] — это ссылки на p1/p2 в памяти,
+        # так что изменения HP применятся к реальным объектам сессии.
+
+        logs = sys_clash.execute_single_action(
+            act,
+            st.session_state['executed_p1'],
+            st.session_state['executed_p2']
+        )
+
+        st.session_state['battle_logs'].extend(logs)
+        st.session_state['action_idx'] += 1
+
+    # Если действия кончились
+    if st.session_state['action_idx'] >= len(actions):
+        step_finish()
+
+
+def step_finish():
+    p1 = st.session_state['attacker']
+    p2 = st.session_state['defender']
+    sys_clash = ClashSystem()
+
+    end_logs = sys_clash.finalize_turn(p1, p2)
+    st.session_state['battle_logs'].extend(end_logs)
+
+    finish_round_logic()  # Вызываем общую логику конца раунда
+
+
+# Старая функция "Auto Run", переименованная для ясности
+def execute_combat_auto():
+    p1 = st.session_state['attacker']
+    p2 = st.session_state['defender']
+    sys_clash = ClashSystem()
+
+    with capture_output() as captured:
+        logs = sys_clash.resolve_turn(p1, p2)
+
+    st.session_state['battle_logs'] = logs
+    st.session_state['script_logs'] = captured.getvalue()
+
+    finish_round_logic()
+
+
+def finish_round_logic():
+    """Общая логика завершения раунда (хил, стаггер, кулдауны)"""
+    p1 = st.session_state['attacker']
+    p2 = st.session_state['defender']
+
+    msg = []
+    if p1.active_slots and p1.active_slots[0].get('stunned'):
+        p1.current_stagger = p1.max_stagger
+        msg.append(f"✨ {p1.name} recovered!")
+
+    if p2.active_slots and p2.active_slots[0].get('stunned'):
+        p2.current_stagger = p2.max_stagger
+        msg.append(f"✨ {p2.name} recovered!")
+
+    st.session_state['turn_message'] = " ".join(msg) if msg else "Round Complete."
+
+    # Events & Cooldowns
+    def trigger_end(unit, prefix):
+        logs = []
+        for pid in unit.passives:
+            if pid in PASSIVE_REGISTRY: PASSIVE_REGISTRY[pid].on_round_end(unit, lambda m: logs.append(m))
+        for pid in unit.talents:
+            if pid in TALENT_REGISTRY: TALENT_REGISTRY[pid].on_round_end(unit, lambda m: logs.append(m))
+
+        logs.extend(StatusManager.process_turn_end(unit))
+        unit.tick_cooldowns()
+
+        if logs:
+            st.session_state['battle_logs'].append({"round": "End", "details": ", ".join(logs)})
+
+    trigger_end(p1, "P1")
+    trigger_end(p2, "P2")
+
+    p1.active_slots = []
+    p2.active_slots = []
+
+    st.session_state['phase'] = 'roll'
+    st.session_state['turn_phase'] = 'done'  # Сброс
+
+
 def execute_combat():
     """Запуск боя"""
     p1 = st.session_state['attacker']
@@ -294,6 +401,52 @@ def render_slot_strip(unit: Unit, opponent: Unit, slot_idx: int, key_prefix: str
                 for line in desc_text:
                     st.caption(f"• {line}")
 
+# ui/simulator.py
+
+def sync_state_from_widgets(unit: Unit, key_prefix: str):
+    for i, slot in enumerate(unit.active_slots):
+        # Если слот оглушен, виджетов нет, пропускаем
+        if slot.get('stunned'): continue
+
+        lib_key = f"{key_prefix}_lib_{i}"
+        if lib_key in st.session_state:
+            slot['card'] = st.session_state[lib_key]
+        tgt_key = f"{key_prefix}_tgt_{i}"
+        if tgt_key in st.session_state:
+            slot['target_slot'] = st.session_state[tgt_key]
+        aggro_key = f"{key_prefix}_aggro_{i}"
+        if aggro_key in st.session_state:
+            slot['is_aggro'] = st.session_state[aggro_key]
+
+
+def precalculate_interactions(p1: Unit, p2: Unit):
+    ClashSystem.calculate_redirections(p1, p2)
+    ClashSystem.calculate_redirections(p2, p1)
+
+    def _calc_ui(me, enemy):
+        for i, my_slot in enumerate(me.active_slots):
+            # Если оглушен - статус простой
+            if my_slot.get('stunned'):
+                my_slot['ui_status'] = {"text": "😵 STAGGERED", "icon": "❌", "color": "gray"}
+                continue
+
+            target_idx = my_slot.get('target_slot', -1)
+            status = {"text": "⛔ NO TARGET", "icon": "⛔", "color": "gray"}
+
+            if target_idx != -1 and target_idx < len(enemy.active_slots):
+                enemy_slot = enemy.active_slots[target_idx]
+
+                # Если враг целится в нас -> CLASH
+                if enemy_slot.get('target_slot') == i:
+                    status = {"text": f"CLASH S{target_idx + 1}", "icon": "⚔️", "color": "red"}
+                else:
+                    status = {"text": f"ATK S{target_idx + 1}", "icon": "🏹", "color": "orange"}
+
+            my_slot['ui_status'] = status
+
+    _calc_ui(p1, p2)
+    _calc_ui(p2, p1)
+
 
 def render_active_abilities(unit, unit_key):
     abilities = []
@@ -357,28 +510,44 @@ def render_active_abilities(unit, unit_key):
     if has_actives: st.caption("Active Abilities")
 
 
-def render_simulator_page():
-    if 'phase' not in st.session_state:
-        st.session_state['phase'] = 'roll'
+# ui/simulator.py
 
+def render_simulator_page():
+    if 'phase' not in st.session_state: st.session_state['phase'] = 'roll'
+    if 'combat_mode' not in st.session_state: st.session_state['combat_mode'] = 'Auto'
+
+    # === ОБНОВЛЕННЫЕ СТИЛИ ===
     st.markdown("""
     <style>
         .block-container { padding-top: 1rem !important; padding-bottom: 2rem !important; }
-        h2 { margin-top: 0 !important; padding-top: 0 !important; }
-        [data-testid="stImage"] img { 
-            object-fit: cover; 
-            border-radius: 12px; 
-            width: 100%;
-            max-height: 200px !important;
+
+        /* Стили для карточек боя */
+        .clash-card-left { text-align: right; padding-right: 10px; }
+        .clash-card-right { text-align: left; padding-left: 10px; }
+
+        /* === ФИКС ДЛЯ КАРТИНОК (АВАТАРОК) === */
+        [data-testid="stImage"] img {
+            max-height: 200px !important; /* Ограничиваем высоту */
+            width: auto !important;       /* Ширина подстроится сама */
+            object-fit: contain;          /* Картинка не будет обрезаться */
+            margin: 0 auto;               /* Центрирование */
+            border-radius: 8px;           /* Скругление углов */
         }
-        /* Уменьшаем отступы в экспандерах */
-        .streamlit-expanderContent { padding-top: 5px !important; }
+
+        /* Центрирование контейнера картинки */
+        [data-testid="stImage"] {
+            text-align: center;
+            display: flex;
+            justify_content: center;
+        }
     </style>
     """, unsafe_allow_html=True)
 
     st.header("⚔️ Battle Simulator")
 
     with st.sidebar:
+        st.divider()
+        st.session_state['combat_mode'] = st.radio("Combat Mode", ["Auto (Fast)", "Manual (Step-by-Step)"])
         st.divider()
         st.button("🔄 Reset & Heal", on_click=reset_game, type="secondary")
 
@@ -388,10 +557,13 @@ def render_simulator_page():
     p1.recalculate_stats()
     p2.recalculate_stats()
 
+    if p1.active_slots: sync_state_from_widgets(p1, "p1")
+    if p2.active_slots: sync_state_from_widgets(p2, "p2")
+
     precalculate_interactions(p1, p2)
 
+    # --- ВЕРХНЯЯ ЧАСТЬ: ИНФО О ПЕРСОНАЖАХ ---
     col_info_l, col_info_r = st.columns(2, gap="medium")
-
     with col_info_l:
         c1, c2 = st.columns([1, 1])
         with c1:
@@ -408,6 +580,7 @@ def render_simulator_page():
             st.image(img, width='stretch')
         render_combat_info(p2)
 
+    # Активные способности (только в фазе броска)
     if st.session_state['phase'] == 'roll':
         st.divider()
         ab_c1, ab_c2 = st.columns(2, gap="medium")
@@ -416,31 +589,45 @@ def render_simulator_page():
 
     st.divider()
 
+    # --- СЛОТЫ ДЕЙСТВИЙ ---
     col_act_l, col_act_r = st.columns(2, gap="medium")
-
     with col_act_l:
         if p1.active_slots:
             st.subheader(f"Actions ({len(p1.active_slots)})")
-            for i in range(len(p1.active_slots)):
-                render_slot_strip(p1, p2, i, "p1")
+            for i in range(len(p1.active_slots)): render_slot_strip(p1, p2, i, "p1")
         elif st.session_state['phase'] == 'planning':
             st.warning("No slots!")
 
     with col_act_r:
         if p2.active_slots:
             st.subheader(f"Actions ({len(p2.active_slots)})")
-            for i in range(len(p2.active_slots)):
-                render_slot_strip(p2, p1, i, "p2")
+            for i in range(len(p2.active_slots)): render_slot_strip(p2, p1, i, "p2")
 
     st.divider()
 
-    btn_col = st.columns([1, 2, 1])[1]
-    with btn_col:
+    # === КНОПКИ УПРАВЛЕНИЯ (ЦЕНТРИРОВАННЫЕ) ===
+    # Используем колонки [1, 2, 1], чтобы кнопки были по центру
+    _, c_center, _ = st.columns([1, 2, 1])
+
+    with c_center:
         if st.session_state['phase'] == 'roll':
             st.button("🎲 ROLL SPEED INITIATIVE", type="primary", on_click=roll_phase, width='stretch')
-        else:
-            st.button("⚔️ EXECUTE TURN", type="primary", on_click=execute_combat, width='stretch')
 
+        elif st.session_state['phase'] == 'planning':
+            if st.session_state['combat_mode'] == 'Auto (Fast)':
+                st.button("⚔️ EXECUTE TURN (ALL)", type="primary", on_click=execute_combat_auto, width='stretch')
+            else:
+                # Ручной режим
+                if st.session_state.get('turn_phase') != 'fighting':
+                    st.button("🏁 START COMBAT PHASE", type="primary", on_click=step_start, width='stretch')
+                else:
+                    # Кнопки "Next" и "Finish" внутри центрального блока
+                    cn1, cn2 = st.columns([3, 1])
+                    actions_left = len(st.session_state['turn_actions']) - st.session_state['action_idx']
+                    cn1.button(f"⏩ NEXT ACTION ({actions_left})", type="primary", on_click=step_next, width='stretch')
+                    cn2.button("🏁 End", type="secondary", on_click=step_finish, width='stretch')
+
+    # === ВЫВОД ЛОГОВ (СИММЕТРИЧНЫЙ ДИЗАЙН) ===
     st.subheader("📜 Battle Report")
 
     if st.session_state.get('turn_message'):
@@ -450,63 +637,61 @@ def render_simulator_page():
 
     if logs:
         for log in logs:
-            # Проверяем формат лога: если есть ключ 'left' - это новый формат
             if "left" in log:
                 with st.container(border=True):
-                    # Три колонки: [Карты/Иконки] [Роллы] [Описание]
-                    c_cards, c_rolls, c_desc = st.columns([3, 1.5, 4])
-
                     left = log['left']
                     right = log['right']
 
-                    # 1. Колонка КАРТ (Left vs Right)
-                    with c_cards:
-                        # Получаем иконки типов кубиков
-                        icon_l = TYPE_ICONS.get(DiceType[left['dice']], "") if left['dice'] != "None" else ""
-                        icon_r = TYPE_ICONS.get(DiceType[right['dice']], "") if right['dice'] != "None" else ""
+                    # 1. ВИЗУАЛИЗАЦИЯ (ВЕРХНИЙ РЯД)
+                    # Пропорции: [2 (P1)] [1 (VS)] [2 (P2)]
+                    c_vis_l, c_vis_c, c_vis_r = st.columns([2, 0.8, 2])
 
-                        # Красивый вывод через Markdown/HTML
+                    # P1 (Слева, выравнивание вправо к центру)
+                    with c_vis_l:
+                        icon = TYPE_ICONS.get(DiceType[left['dice']], "") if left['dice'] != "None" else ""
+                        rng = f"[{left['range']}]" if left['range'] != "-" else ""
                         st.markdown(f"""
-                            **{left['unit']}** <span style='color:gray; font-size:0.8em'>({left['card']})</span>  
-                            ### {icon_l} vs {icon_r}  
-                            **{right['unit']}** <span style='color:gray; font-size:0.8em'>({right['card']})</span>
-                            """, unsafe_allow_html=True)
+                        <div class="clash-card-left">
+                            <b>{left['unit']}</b> <span style='color:gray; font-size:0.8em'>({left['card']})</span><br>
+                            <span style="font-size:1.1em;">{icon} {rng}</span> <b style="font-size:1.4em;">{left['val']}</b>
+                        </div>
+                        """, unsafe_allow_html=True)
 
-                    # 2. Колонка ЧИСЕЛ (Центр)
-                    with c_rolls:
-                        st.markdown(f"<h2 style='text-align: center; margin: 0;'>{left['val']}</h2>",
-                                    unsafe_allow_html=True)
-                        st.markdown(f"<p style='text-align: center; color: gray;'>VS</p>", unsafe_allow_html=True)
-                        st.markdown(f"<h2 style='text-align: center; margin: 0;'>{right['val']}</h2>",
-                                    unsafe_allow_html=True)
+                    # VS (Центр)
+                    with c_vis_c:
+                        st.markdown(f"""
+                        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding-top: 10px;">
+                            <span style="color:gray; font-size:0.9em;">VS</span>
+                        </div>
+                        """, unsafe_allow_html=True)
 
-                    # 3. Колонка ОПИСАНИЯ (История справа)
-                    with c_desc:
-                        st.caption(f"Round: {log['round']} | {log['outcome']}")
+                    # P2 (Справа, выравнивание влево к центру)
+                    with c_vis_r:
+                        icon = TYPE_ICONS.get(DiceType[right['dice']], "") if right['dice'] != "None" else ""
+                        rng = f"[{right['range']}]" if right['range'] != "-" else ""
+                        st.markdown(f"""
+                        <div class="clash-card-right">
+                            <b style="font-size:1.4em;">{right['val']}</b> <span style="font-size:1.1em;">{rng} {icon}</span><br>
+                            <span style='color:gray; font-size:0.8em'>({right['card']})</span> <b>{right['unit']}</b>
+                        </div>
+                        """, unsafe_allow_html=True)
 
-                        # Разделяем логи на "Важные" и "Модификаторы"
-                        effects = []
-                        modifiers = []
+                    # 2. ОПИСАНИЕ И ЭФФЕКТЫ (НИЖНИЙ РЯД, НА ВСЮ ШИРИНУ)
+                    st.divider()  # Тонкая линия разделитель
 
-                        for entry in log['details']:
-                            # Если строка выглядит как "[Reason] +X", считаем модификатором
-                            if "[" in entry and "]" in entry:
-                                modifiers.append(entry)
-                            else:
-                                effects.append(entry)
+                    st.caption(f"Round: {log['round']} | {log['outcome']}")
 
-                        # Сначала выводим важные эффекты (урон, статусы)
-                        if effects:
-                            for eff in effects:
-                                st.markdown(f"➤ {eff}")
+                    effects = [e for e in log['details'] if "[" not in e or "]" not in e]
+                    modifiers = [e for e in log['details'] if "[" in e and "]" in e]
 
-                        # Модификаторы прячем в спойлер или пишем мелко
-                        if modifiers:
-                            with st.expander("Modifiers", expanded=False):
-                                for mod in modifiers:
-                                    st.caption(mod)
+                    for eff in effects:
+                        st.markdown(f"➤ {eff}")
+
+                    if modifiers:
+                        with st.expander("Modifiers", expanded=False):
+                            for mod in modifiers: st.caption(mod)
 
             else:
-                # Старый формат (события начала/конца боя)
+                # Старый лог (Start/End)
                 with st.container():
                     st.caption(f"⏱️ {log.get('round')} | {log.get('details')}")
