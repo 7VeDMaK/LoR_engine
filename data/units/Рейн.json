@@ -1,7 +1,7 @@
 {
     "name": "Рейн",
     "level": 20,
-    "rank": 9,
+    "rank": 8,
     "avatar": "data/avatars/Рейн.png",
     "base_intellect": 6,
     "pct_mods": {
@@ -12,8 +12,8 @@
     },
     "deck": [],
     "base_stats": {
-        "current_hp": 100,
-        "current_sp": 137,
+        "current_hp": 101,
+        "current_sp": 62,
         "current_stagger": 75
     },
     "defense": {
@@ -31,20 +31,20 @@
         }
     },
     "attributes": {
-        "strength": 0,
-        "endurance": 22,
+        "strength": 15,
+        "endurance": 30,
         "agility": 1,
         "wisdom": 0,
-        "psych": 21
+        "psych": 0
     },
     "skills": {
         "strike_power": 0,
-        "medicine": 4,
-        "willpower": 2,
+        "medicine": 0,
+        "willpower": 0,
         "luck": 55,
         "acrobatics": 0,
-        "shields": 0,
-        "tough_skin": 0,
+        "shields": 15,
+        "tough_skin": 30,
         "speed": 15,
         "light_weapon": 0,
         "medium_weapon": 0,
@@ -56,7 +56,8 @@
         "programming": 0
     },
     "passives": [
-        "s_cells"
+        "s_cells",
+        "new_discovery"
     ],
     "talents": [],
     "level_rolls": {

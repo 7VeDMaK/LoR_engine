@@ -16,3 +16,25 @@ class PassiveSCells(BasePassive):
 
             if log_func:
                 log_func(f"🧬 {self.name}: {dice_count} слотов x 10 = Восстановлено {actual_heal} HP")
+
+# ==========================================
+# 5.6 Новое открытие [Сенсорные способности]
+# ==========================================
+class PassiveNewDiscovery(BasePassive):
+    id = "new_discovery"
+    name = "Новое открытие (Сенсоры 2%)"
+    description = "Пассивно: Мудрость +10, Интеллект +2.\nАвтоматически открывает 'Тактический анализ'."
+    is_active_ability = False
+
+    # ВМЕСТО ХАРДКОДА В CALCULATIONS:
+    def on_calculate_stats(self, unit) -> dict:
+        return {
+            "wisdom": 10,
+            "bonus_intellect": 2,  # Специальный ключ для прямого бонуса к интеллекту
+            "backstab_deal": 10,
+            "backstab_take": -10
+        }
+
+    def on_combat_start(self, unit, log_func):
+        if log_func:
+            log_func(f"👁️ {self.name}: Сенсоры активны.")

@@ -10,6 +10,7 @@
         "tal_hp": 200,
         "tal_sp": 0
     },
+    "deck": [],
     "base_stats": {
         "current_hp": 4275,
         "current_sp": 267,

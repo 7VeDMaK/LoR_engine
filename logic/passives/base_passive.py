@@ -34,3 +34,4 @@ class BasePassive:
 
     def get_virtual_defense_die(self, unit, incoming_die): return None
 
+    def on_calculate_stats(self, unit) -> dict: return {}
