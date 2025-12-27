@@ -145,22 +145,103 @@ class ClashFlowMixin(ClashMechanicsMixin):
         report = []
         card = source.current_card
 
+        # Обработка On Use атакующего
         on_use_logs = []
         self._process_card_self_scripts("on_use", source, target, custom_log_list=on_use_logs)
 
         for j, die in enumerate(card.dice_list):
             if source.is_dead() or target.is_dead() or source.is_staggered(): break
 
+            # === 1. ПРОВЕРКА НА КОНТР-КУБИК (COUNTER DIE) ===
+            # Если цель не в стаггере, ищем у неё активный контр-кубик
+            counter_slot_idx, counter_die = self._find_counter_die(target)
+
+            if counter_die and not target.is_staggered():
+                # --- ЗАПУСК КОНТР-КЛЕША ---
+
+                # Создаем контексты
+                ctx_atk = self._create_roll_context(source, target, die)
+                ctx_cnt = self._create_roll_context(target, source, counter_die)
+
+                val_atk = ctx_atk.final_value
+                val_cnt = ctx_cnt.final_value
+
+                # UI Данные для отчета
+                left_info = {
+                    "unit": source.name, "card": card.name,
+                    "dice": die.dtype.name, "val": val_atk,
+                    "range": f"{die.min_val}-{die.max_val}"
+                }
+                # Правая сторона - это Контр-кубик
+                right_info = {
+                    "unit": target.name, "card": "Counter Die",
+                    "dice": counter_die.dtype.name, "val": val_cnt,
+                    "range": f"{counter_die.min_val}-{counter_die.max_val}"
+                }
+
+                outcome = ""
+                detail_logs = []
+                if j == 0 and on_use_logs: detail_logs.extend(on_use_logs)
+
+                # --- ЛОГИКА ПОБЕДЫ ---
+                if val_cnt > val_atk:
+                    # COUNTER WIN
+                    outcome = f"⚡ Counter Win! ({target.name})"
+
+                    # 1. Атакующий проигрывает (получает урон или стаггер)
+                    self._handle_clash_win(ctx_cnt)
+                    self._handle_clash_lose(ctx_atk)
+                    self._resolve_clash_interaction(ctx_cnt, ctx_atk, val_cnt - val_atk)
+
+                    # 2. ВАЖНО: RECYCLE! Контр-кубик НЕ уничтожается.
+                    # Мы просто не помечаем слот как использованный.
+                    detail_logs.append("⚡ Counter Die Recycled!")
+
+                elif val_atk > val_cnt:
+                    # COUNTER LOSE
+                    outcome = f"🗡️ Atk Win! ({source.name})"
+
+                    # 1. Защитник проигрывает (атака проходит)
+                    self._handle_clash_win(ctx_atk)
+                    self._handle_clash_lose(ctx_cnt)
+                    self._resolve_clash_interaction(ctx_atk, ctx_cnt, val_atk - val_cnt)
+
+                    # 2. Контр-кубик ЛОМАЕТСЯ (удаляем его из слота или помечаем слот использованным)
+                    self._consume_counter_die(target, counter_slot_idx)
+                    detail_logs.append("💔 Counter Die Broken!")
+
+                else:
+                    # DRAW
+                    outcome = "🤝 Draw"
+                    # При ничьей обычно оба удара нивелируются, а контр-кубик тратится
+                    self._consume_counter_die(target, counter_slot_idx)
+                    detail_logs.append("Counter Die Used (Draw)")
+
+                # Сбор логов
+                if ctx_atk: detail_logs.extend(ctx_atk.log)
+                if ctx_cnt: detail_logs.extend(ctx_cnt.log)
+
+                report.append({
+                    "type": "clash",  # Показываем как Clash
+                    "round": f"{round_label} (Counter)",
+                    "left": left_info, "right": right_info,
+                    "outcome": outcome, "details": detail_logs
+                })
+
+                # Если атака была отбита (Counter Win или Draw), переходим к след. кубику атакующего
+                # Если атака победила, урон уже нанесен в _resolve_clash_interaction
+                continue
+
+                # === 2. ОБЫЧНАЯ ОДНОСТОРОННЯЯ АТАКА (Если нет контры) ===
             ctx = self._create_roll_context(source, target, die)
 
             left_info = {
                 "unit": source.name, "card": card.name,
                 "dice": die.dtype.name, "val": ctx.final_value,
-                "range": f"{die.min_val}-{die.max_val}"  # Добавлено
+                "range": f"{die.min_val}-{die.max_val}"
             }
             right_info = {
-                "unit": target.name, "card": "---", "dice": "None", "val": 0,
-                "range": "-"  # Добавлено
+                "unit": target.name, "card": "---", "dice": "None", "val": 0, "range": "-"
             }
 
             detail = "Unopposed"
@@ -181,3 +262,23 @@ class ClashFlowMixin(ClashMechanicsMixin):
             })
 
         return report
+
+    def _find_counter_die(self, unit):
+        """Ищет первый доступный слот с картой, содержащей is_counter=True."""
+        for i, slot in enumerate(unit.active_slots):
+            # Проверяем, что слот еще не использован (не executed)
+            # Примечание: executed сеты хранятся в ClashSystem, а не здесь.
+            # Нам нужно проверить флаг 'consumed' внутри слота, который мы будем ставить.
+            if slot.get('consumed', False): continue
+
+            card = slot.get('card')
+            if card and card.dice_list:
+                first_die = card.dice_list[0]  # Берем первый кубик (у нас Frenzy карты по 1 кубику)
+                if getattr(first_die, 'is_counter', False):
+                    return i, first_die
+        return -1, None
+
+    def _consume_counter_die(self, unit, slot_idx):
+        """Помечает слот контр-кубика как использованный (уничтоженный)."""
+        if 0 <= slot_idx < len(unit.active_slots):
+            unit.active_slots[slot_idx]['consumed'] = True
