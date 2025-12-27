@@ -61,8 +61,8 @@ def render_profile_page():
 
         unit.name = st.text_input("Имя", unit.name)
         c_l, c_r = st.columns(2)
-        unit.level = c_l.number_input("Ур.", 1, 90, unit.level)
-        unit.rank = c_r.number_input("Ранг", 1, 12, unit.rank)
+        unit.level = c_l.number_input("Ур.", 1, 100, unit.level)
+        unit.rank = c_r.number_input("Ранг", 1, 10, unit.rank)
 
         st.caption("Базовый Интеллект")
         unit.base_intellect = st.number_input("Int Base", 1, 30, unit.base_intellect, label_visibility="collapsed")
@@ -83,17 +83,17 @@ def render_profile_page():
             c1, c2 = st.columns(2)
             c1.markdown("**Импланты и Таланты (%)**")
             pc1, pc2 = c1.columns(2)
-            unit.implants_hp_pct = pc1.number_input("HP Импл %", 0, 200, unit.implants_hp_pct)
-            unit.implants_sp_pct = pc2.number_input("SP Импл %", 0, 200, unit.implants_sp_pct)
-            unit.talents_hp_pct = pc1.number_input("HP Талант %", 0, 200, unit.talents_hp_pct)
-            unit.talents_sp_pct = pc2.number_input("SP Талант %", 0, 200, unit.talents_sp_pct)
+            unit.implants_hp_pct = pc1.number_input("HP Импл %", 0, 1000, unit.implants_hp_pct)
+            unit.implants_sp_pct = pc2.number_input("SP Импл %", 0, 1000, unit.implants_sp_pct)
+            unit.talents_hp_pct = pc1.number_input("HP Талант %", 0, 1000, unit.talents_hp_pct)
+            unit.talents_sp_pct = pc2.number_input("SP Талант %", 0, 1000, unit.talents_sp_pct)
 
             c2.markdown("**Броня и Резисты**")
             unit.armor_name = c2.text_input("Название Брони", unit.armor_name, placeholder="None для работы пассивки")
             r1, r2, r3 = c2.columns(3)
-            unit.hp_resists.slash = r1.number_input("Slash", 0.1, 2.0, unit.hp_resists.slash)
-            unit.hp_resists.pierce = r2.number_input("Pierce", 0.1, 2.0, unit.hp_resists.pierce)
-            unit.hp_resists.blunt = r3.number_input("Blunt", 0.1, 2.0, unit.hp_resists.blunt)
+            unit.hp_resists.slash = r1.number_input("Slash", 0.0, 2.0, unit.hp_resists.slash)
+            unit.hp_resists.pierce = r2.number_input("Pierce", 0.0, 2.0, unit.hp_resists.pierce)
+            unit.hp_resists.blunt = r3.number_input("Blunt", 0.0, 2.0, unit.hp_resists.blunt)
 
         # ТЕКУЩИЕ СТАТЫ
         with st.container(border=True):
@@ -101,7 +101,7 @@ def render_profile_page():
             sc1.markdown(f"**HP** (Max {unit.max_hp})");
             unit.current_hp = sc1.number_input("hp", 0, 9999, unit.current_hp, label_visibility="collapsed")
             sc2.markdown(f"**SP** (Max {unit.max_sp})");
-            unit.current_sp = sc2.number_input("sp", -45, 9999, unit.current_sp, label_visibility="collapsed")
+            unit.current_sp = sc2.number_input("sp", -9999, 9999, unit.current_sp, label_visibility="collapsed")
             sc3.markdown(f"**Stagger** (Max {unit.max_stagger})");
             unit.current_stagger = sc3.number_input("stg", 0, 9999, unit.current_stagger, label_visibility="collapsed")
 
@@ -140,13 +140,13 @@ def render_profile_page():
         st.caption("Характеристики")
         acols = st.columns(5)
         for i, k in enumerate(["strength", "endurance", "agility", "wisdom", "psych"]):
-            unit.attributes[k] = acols[i].number_input(ATTR_LABELS[k], 0, 30, unit.attributes[k])
+            unit.attributes[k] = acols[i].number_input(ATTR_LABELS[k], 0, 999, unit.attributes[k])
 
         st.caption("Навыки")
         with st.expander("Список навыков", expanded=True):
             scols = st.columns(3)
             for i, k in enumerate(SKILL_LABELS.keys()):
-                unit.skills[k] = scols[i % 3].number_input(SKILL_LABELS[k], 0, 30, unit.skills[k])
+                unit.skills[k] = scols[i % 3].number_input(SKILL_LABELS[k], 0, 999, unit.skills[k])
 
     logs = unit.recalculate_stats()
 

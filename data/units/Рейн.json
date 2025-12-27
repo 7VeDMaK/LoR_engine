@@ -1,0 +1,88 @@
+{
+    "name": "Рейн",
+    "level": 20,
+    "rank": 9,
+    "avatar": "data/avatars/Рейн.png",
+    "base_intellect": 6,
+    "pct_mods": {
+        "imp_hp": 0,
+        "imp_sp": 0,
+        "tal_hp": 0,
+        "tal_sp": 0
+    },
+    "deck": [],
+    "base_stats": {
+        "current_hp": 148,
+        "current_sp": 137,
+        "current_stagger": 75
+    },
+    "defense": {
+        "armor_name": "Standard Fixer Suit",
+        "armor_type": "Medium",
+        "hp_resists": {
+            "slash": 1.0,
+            "pierce": 1.0,
+            "blunt": 1.0
+        },
+        "stagger_resists": {
+            "slash": 1.0,
+            "pierce": 1.0,
+            "blunt": 1.0
+        }
+    },
+    "attributes": {
+        "strength": 0,
+        "endurance": 22,
+        "agility": 6,
+        "wisdom": 0,
+        "psych": 21
+    },
+    "skills": {
+        "strike_power": 0,
+        "medicine": 3,
+        "willpower": 2,
+        "luck": 55,
+        "acrobatics": 0,
+        "shields": 0,
+        "tough_skin": 0,
+        "speed": 13,
+        "light_weapon": 0,
+        "medium_weapon": 0,
+        "heavy_weapon": 0,
+        "firearms": 0,
+        "eloquence": 0,
+        "forging": 0,
+        "engineering": 0,
+        "programming": 0
+    },
+    "passives": [],
+    "talents": [],
+    "level_rolls": {
+        "3": {
+            "hp": 4,
+            "sp": 1
+        },
+        "6": {
+            "hp": 5,
+            "sp": 3
+        },
+        "9": {
+            "hp": 2,
+            "sp": 2
+        },
+        "12": {
+            "hp": 2,
+            "sp": 2
+        },
+        "15": {
+            "hp": 1,
+            "sp": 2
+        },
+        "18": {
+            "hp": 4,
+            "sp": 2
+        }
+    },
+    "cooldowns": {},
+    "active_buffs": {}
+}
