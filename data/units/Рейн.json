@@ -33,19 +33,19 @@
     "attributes": {
         "strength": 0,
         "endurance": 22,
-        "agility": 6,
+        "agility": 1,
         "wisdom": 0,
         "psych": 21
     },
     "skills": {
         "strike_power": 0,
-        "medicine": 3,
+        "medicine": 4,
         "willpower": 2,
         "luck": 55,
         "acrobatics": 0,
         "shields": 0,
         "tough_skin": 0,
-        "speed": 13,
+        "speed": 15,
         "light_weapon": 0,
         "medium_weapon": 0,
         "heavy_weapon": 0,

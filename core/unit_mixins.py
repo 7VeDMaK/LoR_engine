@@ -155,6 +155,36 @@ class UnitCombatMixin:
                     'locked': True
                 })
 
+        # === ТАЛАНТ: МАХНУТЬ ХВОСТИКОМ (Tail Swipe) ===
+        if "wag_tail" in self.passives:
+            # Берем значения скорости как для основного кубика
+            if self.computed_speed_dice:
+                d_min, d_max = self.computed_speed_dice[0]
+            else:
+                d_min, d_max = self.base_speed_min, self.base_speed_max
+
+            mod = self.get_status("haste") - self.get_status("slow") - self.get_status("bind")
+            val_tail = max(1, random.randint(d_min, d_max) + mod)
+
+            # Создаем техническую карту с контр-кубиком (Уклонение 5-7)
+            card_tail = Card(
+                id="tail_swipe_counter",
+                name="Tail Counter",
+                description="Counter Evade: Отражает атаку и сгорает.",
+                dice_list=[Dice(5, 7, DiceType.EVADE, is_counter=True)]
+            )
+
+            # Добавляем отдельный слот
+            self.active_slots.append({
+                'speed': val_tail,
+                'card': card_tail,
+                'target_slot': -1,
+                'is_aggro': False,
+                'source_effect': 'Tail Swipe 🐈',
+                'locked': True,  # Запрещаем менять карту в симуляторе
+                'consumed': False
+            })
+
     def is_staggered(self) -> bool:
         return self.current_stagger <= 0
 

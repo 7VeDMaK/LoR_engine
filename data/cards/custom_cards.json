@@ -664,6 +664,24 @@
           }
         }
       ]
+    },
+    {
+      "id": "new_card_d15c",
+      "name": "New Card",
+      "tier": 1,
+      "type": "melee",
+      "description": "",
+      "flags": [],
+      "scripts": {},
+      "dice": [
+        {
+          "type": "slash",
+          "base_min": 50,
+          "base_max": 50,
+          "is_counter": false,
+          "scripts": {}
+        }
+      ]
     }
   ]
 }
