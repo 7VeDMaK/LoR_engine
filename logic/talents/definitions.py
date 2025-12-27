@@ -1,4 +1,7 @@
 # logic/talents/definitions.py
+import copy
+
+from core.dice import Dice
 from logic.passives import BasePassive
 from logic.context import RollContext
 from core.enums import DiceType
@@ -136,3 +139,10 @@ class TalentSmokeUniversality(BasePassive):
             log_func(f"🌫️➡️✨ **{self.name}**: Потрачено {cost} Дыма -> Получено +{amount} {target_stat.capitalize()}!")
 
         return True
+
+
+class TalentFrenzy(BasePassive):
+    id = "frenzy"
+    name = "Неистовство"
+    description = "5.5 Пассивно: Дает доп. слот с фиксированной атакой (5-7). Если Самообладание > 10, дает еще один слот (6-8)."
+    # Логика теперь перенесена в UnitCombatMixin, как у Ярости

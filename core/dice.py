@@ -1,5 +1,6 @@
+# core/dice.py
 from dataclasses import dataclass, field
-from typing import List, Dict
+from typing import List, Dict, Optional
 from core.enums import DiceType
 
 @dataclass
@@ -7,13 +8,17 @@ class Dice:
     min_val: int
     max_val: int
     dtype: DiceType
+    # Новый флаг для контратак
+    is_counter: bool = False
     scripts: Dict[str, List[Dict]] = field(default_factory=dict)
+    current_val: int = 0
 
     def to_dict(self):
         return {
             "type": self.dtype.value.lower(),
             "base_min": self.min_val,
             "base_max": self.max_val,
+            "is_counter": self.is_counter, # Сохраняем флаг
             "scripts": self.scripts
         }
 
@@ -30,5 +35,6 @@ class Dice:
             min_val=data.get("base_min", 1),
             max_val=data.get("base_max", 1),
             dtype=dtype,
+            is_counter=data.get("is_counter", False),
             scripts=data.get("scripts", {})
         )

@@ -275,105 +275,97 @@ def precalculate_interactions(p1: Unit, p2: Unit):
     _calc_ui(p2, p1)
 
 
-# === ИСПРАВЛЕННАЯ ФУНКЦИЯ ОТРИСОВКИ СЛОТА ===
+# ui/simulator.py
+
 def render_slot_strip(unit: Unit, opponent: Unit, slot_idx: int, key_prefix: str):
     slot = unit.active_slots[slot_idx]
 
+    # --- 1. ЕСЛИ ПЕРСОНАЖ ОГЛУШЕН (STAGGER) ---
     if slot.get('stunned'):
         with st.container(border=True):
             st.error(f"😵 **UNIT STAGGERED** (Speed 0)")
-            st.caption("Персонаж оглушен и пропустит этот ход.")
+            st.caption("Персонаж оглушен и пропустит этот ход. Получаемый урон увеличен.")
         return
 
-    # --- АВТО-ВЫБОР КАРТЫ ---
-    if unit.deck:
-        # Если у юнита есть колода, загружаем только эти карты
-        # Используем Library.get_card(id), чтобы получить объекты
-        unit_cards = [Library.get_card(cid) for cid in unit.deck]
-
-        # (Опционально) Добавляем карту "Пропуск/Пас", если нужно
-        # или проверяем, что карты вообще загрузились
-        all_cards = unit_cards if unit_cards else Library.get_all_cards()
-    else:
-        # Если колода пуста (например, старый персонаж или моб),
-        # показываем ВСЕ карты (режим песочницы)
-        all_cards = Library.get_all_cards()
-    if slot.get('card') is None and all_cards:
-        slot['card'] = all_cards[0]
-
-    selected_card = slot.get('card')
+    # --- 2. ПОДГОТОВКА ЗАГОЛОВКА ---
     speed = slot['speed']
     ui_stat = slot.get('ui_status', {"text": "...", "icon": "", "color": "gray"})
+    selected_card = slot.get('card')
     card_name = f"🃏 {selected_card.name}" if selected_card else "⚠️ No Page"
 
+    # Если слот создан талантом (например, Ярость или Неистовство), покажем это
     spd_label = f"🎲{speed}"
-    if slot.get("source_effect"): spd_label += f" ({slot.get('source_effect')})"
+    if slot.get("source_effect"):
+        spd_label += f" ({slot.get('source_effect')})"
 
     label = f"S{slot_idx + 1} ({spd_label}) | {ui_stat['icon']} {ui_stat['text']} | {card_name}"
 
+    # --- 3. РАСКРЫВАЮЩАЯСЯ ПАНЕЛЬ СЛОТА ---
     with st.expander(label, expanded=False):
-        # ИЗМЕНЕНИЕ: 3 колонки (Цель, Карта, Опции)
-        c_tgt, c_sel, c_opts = st.columns([1.5, 2, 1.2])
+        c_tgt, c_sel, c_aggro = st.columns([1.5, 2, 0.5])
 
-        # --- TARGET SELECTOR ---
+        # === КОЛОНКА 1: ВЫБОР ЦЕЛИ ===
         target_options = [-1]
         target_labels = {-1: "⛔ None"}
+
         for i, opp_slot in enumerate(opponent.active_slots):
             target_options.append(i)
             opp_tgt = opp_slot.get('target_slot', -1)
+
+            # Иконка показывает, целятся ли в нас в ответ
             icon = "⚔️" if opp_tgt == slot_idx else "🛡️"
-            extra = "😵" if opp_slot.get('stunned') else f"Spd {opp_slot['speed']}"
+
+            # Инфо о скорости врага
+            opp_spd = opp_slot['speed']
+            extra = "😵" if opp_slot.get('stunned') else f"Spd {opp_spd}"
+
             target_labels[i] = f"{icon} S{i + 1} ({extra})"
 
         current_tgt = slot.get('target_slot', -1)
         if current_tgt not in target_options: current_tgt = -1
 
-        new_target = c_tgt.selectbox(
+        c_tgt.selectbox(
             "Target", target_options,
             format_func=lambda x: target_labels[x],
             index=target_options.index(current_tgt),
             key=f"{key_prefix}_tgt_{slot_idx}",
-            label_visibility="collapsed"
-        )
-        slot['target_slot'] = new_target
-
-        # --- CARD SELECTOR ---
-        card_index = 0
-        if selected_card:
-            for idx, c in enumerate(all_cards):
-                if c.name == selected_card.name:
-                    card_index = idx
-                    break
-
-        picked_card = c_sel.selectbox(
-            "Page", all_cards,
-            format_func=lambda x: x.name,
-            index=card_index,
-            key=f"{key_prefix}_lib_{slot_idx}",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            help="Выберите слот противника для атаки"
         )
 
-        if picked_card:
-            slot['card'] = picked_card
-            selected_card = picked_card
+        # === КОЛОНКА 2: ВЫБОР КАРТЫ (С УЧЕТОМ БЛОКИРОВКИ) ===
+        # Если слот 'locked' (например, от таланта Неистовство), мы не даем менять карту
+        if slot.get('locked', False):
+            locked_name = selected_card.name if selected_card else "Locked Ability"
+            c_sel.warning(f"🔒 {locked_name}")
+        else:
+            # Обычный выбор из библиотеки
+            all_cards = Library.get_all_cards()
+            card_index = 0
+            if selected_card:
+                for idx, c in enumerate(all_cards):
+                    if c.name == selected_card.name:
+                        card_index = idx
+                        break
 
-        # --- OPTIONS (AGGRO & FORCE CLASH) ---
-        # Делим колонку опций на две маленькие
-        opt_c1, opt_c2 = c_opts.columns(2)
+            c_sel.selectbox(
+                "Page", all_cards,
+                format_func=lambda x: x.name,
+                index=card_index,
+                key=f"{key_prefix}_lib_{slot_idx}",
+                label_visibility="collapsed"
+            )
 
-        slot['is_aggro'] = opt_c1.checkbox("✋", value=slot.get('is_aggro', False),
-                                           key=f"{key_prefix}_aggro_{slot_idx}",
-                                           help="Aggro (Перехват)")
-
-        # Галочка "No Discard" (Замочек)
-        slot['force_clash'] = opt_c2.checkbox("🔒", value=slot.get('force_clash', False),
-                                              key=f"{key_prefix}_force_{slot_idx}",
-                                              help="No Discard: Не сбрасывать атаку, даже если я намного быстрее. (Принудительный клэш)")
+        # === КОЛОНКА 3: АГГРО ЧЕКБОКС ===
+        c_aggro.checkbox("✋", value=slot.get('is_aggro', False),
+                         key=f"{key_prefix}_aggro_{slot_idx}",
+                         help="Попытаться перехватить атаку (Aggro)")
 
         st.divider()
 
-        # --- ОТРИСОВКА КУБИКОВ ---
+        # === 4. ОТОБРАЖЕНИЕ ИНФОРМАЦИИ О КАРТЕ ===
         if selected_card:
+            # Кубики
             if selected_card.dice_list:
                 dice_display = []
                 for d in selected_card.dice_list:
@@ -382,11 +374,15 @@ def render_slot_strip(unit: Unit, opponent: Unit, slot_idx: int, key_prefix: str
                     dice_display.append(f":{color}[{icon} {d.min_val}-{d.max_val}]")
                 st.markdown(" ".join(dice_display))
 
+            # Сбор описания скриптов для подсказки
             desc_text = []
+
+            # Эффекты "При использовании"
             if "on_use" in selected_card.scripts:
                 for s in selected_card.scripts["on_use"]:
                     desc_text.append(f"On Use: {_format_script_text(s['script_id'], s.get('params', {}))}")
 
+            # Эффекты кубиков (При попадании / При победе)
             for d in selected_card.dice_list:
                 if d.scripts:
                     for trig, effs in d.scripts.items():
@@ -394,14 +390,14 @@ def render_slot_strip(unit: Unit, opponent: Unit, slot_idx: int, key_prefix: str
                             t_name = trig.replace("_", " ").title()
                             desc_text.append(f"{t_name}: {_format_script_text(e['script_id'], e.get('params', {}))}")
 
+            # Описание самой карты
             if selected_card.description:
                 st.caption(f"📝 {selected_card.description}")
 
+            # Вывод списка эффектов
             if desc_text:
                 for line in desc_text:
                     st.caption(f"• {line}")
-
-# ui/simulator.py
 
 def sync_state_from_widgets(unit: Unit, key_prefix: str):
     for i, slot in enumerate(unit.active_slots):

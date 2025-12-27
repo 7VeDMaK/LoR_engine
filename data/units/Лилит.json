@@ -78,7 +78,8 @@
         "berserker_rage",
         "calm_mind",
         "hiding_in_smoke",
-        "smoke_universality"
+        "smoke_universality",
+        "frenzy"
     ],
     "level_rolls": {
         "3": {
