@@ -15,7 +15,7 @@ def recalculate_unit_stats(unit):
         "power_all": 0, "power_attack": 0, "power_block": 0, "power_evade": 0,
         "damage_deal": 0, "damage_take": 0, "heal_efficiency": 0.0, "initiative": 0,
         "power_light": 0, "power_medium": 0, "power_heavy": 0, "power_ranged": 0,
-        "total_intellect": 0
+        "total_intellect": 0, "max_sp_pct": 0
     }
 
     # Сбор всех ключей
@@ -53,15 +53,11 @@ def recalculate_unit_stats(unit):
             if stat in bonuses:
                 bonuses[stat] += val
             elif stat in mods:
+                # Вот здесь сработает: mods["max_sp_pct"] += 20
                 mods[stat] += val
-            # Обработка спец. ключей
             elif stat == "backstab_deal":
                 mods["damage_deal"] += val
             elif stat == "backstab_take":
-                # Если талант дает защиту (-10 урона), добавляем в damage_take
-                # Но мы договорились: damage_take - это "сколько СНИЗИТЬ".
-                # Поэтому если backstab_take = -10 (снижение), то прибавляем 10.
-                # Если val отрицательный (-10), значит мы хотим снизить урон на 10.
                 mods["damage_take"] += abs(val)
 
     # Helper
@@ -193,13 +189,21 @@ def recalculate_unit_stats(unit):
     final_h = step2 * (1 + unit.talents_hp_pct / 100.0)
     unit.max_hp = int(final_h)
 
+    # SP (РАССУДОК)
     base_s = 20
     rolls_s = sum(5 + v.get("sp", 0) for v in unit.level_rolls.values())
     raw_s = base_s + rolls_s + sp_flat
 
-    step1_s = raw_s * (1 + sp_pct / 100.0)
+    # Расчет процента
+    # sp_pct - это бонус от Психики (Psych)
+    # mods["max_sp_pct"] - это бонус от Талантов (Держать себя в руках)
+
+    if mods["max_sp_pct"] > 0:
+        logs.append(f"Бонус Рассудка (Таланты): +{mods['max_sp_pct']}%")
+
+    step1_s = raw_s * (1 + sp_pct / 100.0)  # <--- Используем Total
     step2_s = step1_s * (1 + unit.implants_sp_pct / 100.0)
-    final_s = step2_s * (1 + unit.talents_sp_pct / 100.0)
+    final_s = step2_s * (1 + (unit.talents_sp_pct + mods["max_sp_pct"]) / 100.0)
     unit.max_sp = int(final_s)
 
     base_stg = unit.max_hp // 2

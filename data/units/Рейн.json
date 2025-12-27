@@ -12,9 +12,9 @@
     },
     "deck": [],
     "base_stats": {
-        "current_hp": 68,
-        "current_sp": 62,
-        "current_stagger": 34
+        "current_hp": 148,
+        "current_sp": 100,
+        "current_stagger": 75
     },
     "defense": {
         "armor_name": "Standard Fixer Suit",
@@ -61,7 +61,11 @@
         "red_lycoris",
         "shadow_majesty"
     ],
-    "talents": [],
+    "talents": [
+        "keep_it_together",
+        "center_of_balance",
+        "revenge"
+    ],
     "level_rolls": {
         "3": {
             "hp": 4,

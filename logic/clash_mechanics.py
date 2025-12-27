@@ -149,6 +149,9 @@ class ClashMechanicsMixin:
             resist_msg = ""
             if res != 1.0: resist_msg = f" (Res x{res:.1f})"
 
+            log_wrapper = lambda msg: source_ctx.log.append(msg)
+            self._trigger_unit_event("on_take_damage", target, final_dmg, dmg_type, log_func=log_wrapper)
+
             source_ctx.log.append(f"😵 **{final_dmg}** Stagger урона{resist_msg} по {target.name}")
 
     def _apply_damage(self, attacker_ctx: RollContext, defender_ctx: RollContext, dmg_type: str = "hp"):
