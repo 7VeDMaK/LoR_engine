@@ -12,9 +12,9 @@
     },
     "deck": [],
     "base_stats": {
-        "current_hp": 172,
+        "current_hp": 68,
         "current_sp": 62,
-        "current_stagger": 78
+        "current_stagger": 34
     },
     "defense": {
         "armor_name": "Standard Fixer Suit",
@@ -32,19 +32,19 @@
     },
     "attributes": {
         "strength": 0,
-        "endurance": 30,
-        "agility": 0,
+        "endurance": 22,
+        "agility": 1,
         "wisdom": 0,
-        "psych": 0
+        "psych": 21
     },
     "skills": {
         "strike_power": 0,
-        "medicine": 0,
-        "willpower": 0,
+        "medicine": 4,
+        "willpower": 2,
         "luck": 55,
         "acrobatics": 0,
-        "shields": 15,
-        "tough_skin": 30,
+        "shields": 0,
+        "tough_skin": 0,
         "speed": 15,
         "light_weapon": 0,
         "medium_weapon": 0,

@@ -14,7 +14,7 @@ ATTR_LABELS = {
     "wisdom": "Мудрость", "psych": "Психика"
 }
 
-# Удаляем Удачу из общего списка, чтобы отрисовать её отдельно
+# Удаляем Удачу из общего списка, так как она в отдельном блоке
 SKILL_LABELS = {
     "strike_power": "Сила удара", "medicine": "Медицина", "willpower": "Сила воли",
     "acrobatics": "Акробатика", "shields": "Щиты",
@@ -52,7 +52,10 @@ def render_profile_page():
 
     unit = roster[sel]
 
-    if st.button("💾 СОХРАНИТЬ ПРОФИЛЬ", type="primary", width='stretch'):
+    # Создаем уникальный суффикс для ключей виджетов, чтобы данные не смешивались при смене персонажа
+    u_key = unit.name.replace(" ", "_")
+
+    if st.button("💾 СОХРАНИТЬ ПРОФИЛЬ", type="primary", width='stretch', key=f"save_btn_{u_key}"):
         UnitLibrary.save_unit(unit)
         st.toast("Данные персонажа сохранены!", icon="✅")
 
@@ -68,21 +71,22 @@ def render_profile_page():
         img = unit.avatar if unit.avatar and os.path.exists(
             unit.avatar) else "https://placehold.co/150x150/png?text=No+Image"
         st.image(img, width='stretch')
-        upl = st.file_uploader("Загрузить арт", type=['png', 'jpg'], label_visibility="collapsed")
+        upl = st.file_uploader("Загрузить арт", type=['png', 'jpg'], label_visibility="collapsed", key=f"upl_{u_key}")
         if upl:
             unit.avatar = save_avatar_file(upl, unit.name)
             UnitLibrary.save_unit(unit)
             st.rerun()
 
         # Основные данные
-        unit.name = st.text_input("Имя", unit.name)
+        unit.name = st.text_input("Имя", unit.name, key=f"name_{u_key}")
 
         c_lvl, c_int = st.columns(2)
-        unit.level = c_lvl.number_input("Уровень", 1, 100, unit.level)
+        unit.level = c_lvl.number_input("Уровень", 1, 100, unit.level, key=f"lvl_{u_key}")
 
         # Интеллект
-        unit.base_intellect = c_int.number_input("Баз. Инт.", 1, 30, unit.base_intellect)
+        unit.base_intellect = c_int.number_input("Баз. Инт.", 1, 30, unit.base_intellect, key=f"base_int_{u_key}")
         total_int = unit.modifiers.get("total_intellect", unit.base_intellect)
+
         if total_int > unit.base_intellect:
             st.info(f"🧠 Интеллект: **{total_int}** (+{total_int - unit.base_intellect})")
         else:
@@ -93,11 +97,11 @@ def render_profile_page():
         # === РАНГ (Два слота) ===
         st.markdown("**Ранг Фиксера**")
         r_c1, r_c2 = st.columns(2)
-        unit.rank = r_c1.number_input("Текущий", 1, 12, unit.rank, help="Официальный ранг (12=Zwei, 1=Hana)")
+        unit.rank = r_c1.number_input("Текущий", 1, 12, unit.rank, help="Официальный ранг", key=f"rank_cur_{u_key}")
 
-        # Ранг по статусу (храним в памяти или отдельном поле, пока заглушка в memory)
+        # Ранг по статусу
         status_rank = unit.memory.get("status_rank", "9 (Fixer)")
-        new_status = r_c2.text_input("Статус", status_rank, help="Ранг, основанный на репутации/сюжете")
+        new_status = r_c2.text_input("Статус", status_rank, help="Ранг репутации", key=f"rank_stat_{u_key}")
         unit.memory["status_rank"] = new_status
 
         st.divider()
@@ -119,17 +123,20 @@ def render_profile_page():
             c1, c2 = st.columns(2)
             c1.markdown("**Модификаторы (%)**")
             pc1, pc2 = c1.columns(2)
-            unit.implants_hp_pct = pc1.number_input("HP Импл %", 0, 500, unit.implants_hp_pct)
-            unit.implants_sp_pct = pc2.number_input("SP Импл %", 0, 500, unit.implants_sp_pct)
-            unit.talents_hp_pct = pc1.number_input("HP Талант %", 0, 500, unit.talents_hp_pct)
-            unit.talents_sp_pct = pc2.number_input("SP Талант %", 0, 500, unit.talents_sp_pct)
+            unit.implants_hp_pct = pc1.number_input("HP Импл %", 0, 500, unit.implants_hp_pct, key=f"imp_hp_{u_key}")
+            unit.implants_sp_pct = pc2.number_input("SP Импл %", 0, 500, unit.implants_sp_pct, key=f"imp_sp_{u_key}")
+            unit.talents_hp_pct = pc1.number_input("HP Талант %", 0, 500, unit.talents_hp_pct, key=f"tal_hp_{u_key}")
+            unit.talents_sp_pct = pc2.number_input("SP Талант %", 0, 500, unit.talents_sp_pct, key=f"tal_sp_{u_key}")
 
             c2.markdown("**Броня и Резисты**")
-            unit.armor_name = c2.text_input("Броня", unit.armor_name, placeholder="Название")
+            unit.armor_name = c2.text_input("Броня", unit.armor_name, placeholder="Название", key=f"armor_{u_key}")
             r1, r2, r3 = c2.columns(3)
-            unit.hp_resists.slash = r1.number_input("Slash", 0.0, 3.0, unit.hp_resists.slash, step=0.1)
-            unit.hp_resists.pierce = r2.number_input("Pierce", 0.0, 3.0, unit.hp_resists.pierce, step=0.1)
-            unit.hp_resists.blunt = r3.number_input("Blunt", 0.0, 3.0, unit.hp_resists.blunt, step=0.1)
+            unit.hp_resists.slash = r1.number_input("Slash", 0.0, 3.0, unit.hp_resists.slash, step=0.1,
+                                                    key=f"res_sl_{u_key}")
+            unit.hp_resists.pierce = r2.number_input("Pierce", 0.0, 3.0, unit.hp_resists.pierce, step=0.1,
+                                                     key=f"res_pi_{u_key}")
+            unit.hp_resists.blunt = r3.number_input("Blunt", 0.0, 3.0, unit.hp_resists.blunt, step=0.1,
+                                                    key=f"res_bl_{u_key}")
 
         # 2. Полоски HP/SP
         with st.container(border=True):
@@ -140,28 +147,70 @@ def render_profile_page():
 
             # Инпуты для ручной правки
             c_edit1, c_edit2, c_edit3 = st.columns(3)
-            unit.current_hp = c_edit1.number_input("Set HP", 0, 9999, unit.current_hp, label_visibility="collapsed")
-            unit.current_sp = c_edit2.number_input("Set SP", -999, 999, unit.current_sp, label_visibility="collapsed")
+            unit.current_hp = c_edit1.number_input("Set HP", 0, 9999, unit.current_hp, label_visibility="collapsed",
+                                                   key=f"set_hp_{u_key}")
+            unit.current_sp = c_edit2.number_input("Set SP", -999, 999, unit.current_sp, label_visibility="collapsed",
+                                                   key=f"set_sp_{u_key}")
             unit.current_stagger = c_edit3.number_input("Set Stg", 0, 9999, unit.current_stagger,
-                                                        label_visibility="collapsed")
+                                                        label_visibility="collapsed", key=f"set_stg_{u_key}")
 
-        # 3. Характеристики (5 колонок)
+        # === 3. ОЧКИ И БРОСКИ УРОВНЯ ===
+        with st.container(border=True):
+            lvl_growth = max(0, unit.level - 1)
+            total_attr = 25 + lvl_growth
+            total_skill = 38 + (lvl_growth * 2)
+            total_tal = unit.level // 3
+
+            spent_a = sum(unit.attributes.values())
+            spent_s = sum(unit.skills.values())
+            spent_t = len(unit.talents)
+
+            st.caption("Свободные очки (Доступно - Потрачено)")
+            c_pts1, c_pts2, c_pts3 = st.columns(3)
+
+            val_a = total_attr - spent_a
+            val_s = total_skill - spent_s
+            val_t = total_tal - spent_t
+
+            c_pts1.metric("Характеристики", f"{val_a}", help=f"Всего очков: {total_attr}")
+            c_pts2.metric("Навыки", f"{val_s}", help=f"Всего очков: {total_skill}")
+            c_pts3.metric("Таланты (Slots)", f"{val_t}", help=f"Всего слотов: {total_tal}")
+
+            with st.expander("🎲 История Бросков HP/SP"):
+                missing = [i for i in range(3, unit.level + 1, 3) if str(i) not in unit.level_rolls]
+                if missing:
+                    if st.button("Бросить кубики", key=f"roll_btn_{u_key}"):
+                        for l in missing:
+                            unit.level_rolls[str(l)] = {"hp": random.randint(1, 5), "sp": random.randint(1, 5)}
+                        UnitLibrary.save_unit(unit)
+                        st.rerun()
+
+                if unit.level_rolls:
+                    for lvl in sorted(map(int, unit.level_rolls.keys())):
+                        r = unit.level_rolls[str(lvl)]
+                        st.caption(f"Lvl {lvl}: +{5 + r['hp']} HP, +{5 + r['sp']} SP")
+                else:
+                    st.caption("Нет записей о бросках.")
+
+        # 4. Характеристики (5 колонок)
         st.subheader("Характеристики")
         acols = st.columns(5)
         attr_keys = ["strength", "endurance", "agility", "wisdom", "psych"]
 
         for i, k in enumerate(attr_keys):
-            base_val = unit.attributes[k]
+            base_val = unit.attributes.get(k, 0)  # Используем get на всякий случай
             total_val = unit.modifiers.get(f"total_{k}", base_val)
 
             with acols[i]:
                 st.caption(ATTR_LABELS[k])
                 c_in, c_val = st.columns([1.5, 1])
                 with c_in:
-                    new_base = st.number_input("Base", 0, 999, base_val, key=f"attr_{k}", label_visibility="collapsed")
+                    # ВАЖНО: key включает имя персонажа, чтобы избежать коллизий
+                    new_base = st.number_input("Base", 0, 999, base_val, key=f"attr_{k}_{u_key}",
+                                               label_visibility="collapsed")
                     unit.attributes[k] = new_base
                 with c_val:
-                    st.write("")  # Spacer
+                    st.write("")
                     if total_val > new_base:
                         st.markdown(f":green[**{total_val}**]")
                     elif total_val < new_base:
@@ -169,12 +218,11 @@ def render_profile_page():
                     else:
                         st.markdown(f"**{total_val}**")
 
-        # 4. УДАЧА (Два слота)
+        # 5. УДАЧА
         st.divider()
         st.subheader("🍀 Удача")
         l_col1, l_col2, _ = st.columns([1, 1, 2])
 
-        # Слот 1: Стат (Навык)
         with l_col1:
             st.caption("Стат (Навык)")
             base_luck = unit.skills.get("luck", 0)
@@ -182,7 +230,8 @@ def render_profile_page():
 
             lc_in, lc_val = st.columns([1.5, 1])
             with lc_in:
-                new_luck_skill = st.number_input("Luck Skill", 0, 999, base_luck, label_visibility="collapsed")
+                new_luck_skill = st.number_input("Luck Skill", 0, 999, base_luck, label_visibility="collapsed",
+                                                 key=f"luck_sk_{u_key}")
                 unit.skills["luck"] = new_luck_skill
             with lc_val:
                 st.write("")
@@ -191,16 +240,14 @@ def render_profile_page():
                 else:
                     st.markdown(f"**{total_luck}**")
 
-        # Слот 2: Текущая удача (Ресурс)
         with l_col2:
             st.caption("Текущая (Points)")
-            # Храним в resources, т.к. это изменяемый в бою параметр
             cur_luck = unit.resources.get("luck", 0)
             new_cur_luck = st.number_input("Current Luck", 0, 999, cur_luck, label_visibility="collapsed",
-                                           help="Расходуемый ресурс удачи")
+                                           key=f"luck_res_{u_key}")
             unit.resources["luck"] = new_cur_luck
 
-        # 5. Остальные Навыки
+        # 6. Остальные Навыки
         st.markdown("")
         with st.expander("📚 Остальные навыки", expanded=True):
             scols = st.columns(3)
@@ -215,7 +262,9 @@ def render_profile_page():
                     st.caption(SKILL_LABELS[k])
                     c_in, c_val = st.columns([1.5, 1])
                     with c_in:
-                        new_base = st.number_input("S", 0, 999, base_val, key=f"sk_{k}", label_visibility="collapsed")
+                        # ВАЖНО: Уникальный ключ для каждого навыка каждого персонажа
+                        new_base = st.number_input("S", 0, 999, base_val, key=f"sk_{k}_{u_key}",
+                                                   label_visibility="collapsed")
                         unit.skills[k] = new_base
                     with c_val:
                         st.write("")
@@ -243,7 +292,8 @@ def render_profile_page():
         "Состав колоды:",
         options=all_card_ids,
         default=valid_deck,
-        format_func=lambda x: f"{card_map[x].name} [{card_map[x].tier}]" if x in card_map else x
+        format_func=lambda x: f"{card_map[x].name} [{card_map[x].tier}]" if x in card_map else x,
+        key=f"deck_sel_{u_key}"
     )
     if sel_deck != unit.deck:
         unit.deck = sel_deck
@@ -273,7 +323,7 @@ def render_profile_page():
             format_func=fmt_name,
             max_selections=max_talents,
             label_visibility="collapsed",
-            key=f"mt_{unit.name}"
+            key=f"mt_{u_key}"
         )
 
         # Пассивки
@@ -284,7 +334,7 @@ def render_profile_page():
             default=[p for p in unit.passives if p in PASSIVE_REGISTRY],
             format_func=fmt_name,
             label_visibility="collapsed",
-            key=f"mp_{unit.name}"
+            key=f"mp_{u_key}"
         )
 
     with c_desc:

@@ -10,7 +10,7 @@ class BasePassive:
 
     def on_combat_start(self, unit, log_func, **kwargs): pass
 
-    def on_combat_end(self, unit, log_func): pass
+    def on_combat_end(self, unit, log_func, **kwargs): pass # На всякий случай и тут
 
     def on_round_start(self, unit, log_func): pass
 

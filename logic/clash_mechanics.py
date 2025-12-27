@@ -152,54 +152,76 @@ class ClashMechanicsMixin:
             source_ctx.log.append(f"😵 **{final_dmg}** Stagger урона{resist_msg} по {target.name}")
 
     def _apply_damage(self, attacker_ctx: RollContext, defender_ctx: RollContext, dmg_type: str = "hp"):
+        """Стандартный расчет урона от атаки с подробным логом."""
         attacker = attacker_ctx.source
         defender = attacker_ctx.target or attacker_ctx.target
 
-        # === ПРОВЕРКА ИММУНИТЕТА ДО ВСЕГО ===
+        # === ПРОВЕРКА ИММУНИТЕТА ===
         if defender.get_status("red_lycoris") > 0:
-            attacker_ctx.log.append(f"🚫 {defender.name} Immune to Attack (Lycoris)")
+            attacker_ctx.log.append(f"🚫 {defender.name} Immune (Lycoris)")
             return
 
-        self._dispatch_event("on_hit", attacker_ctx)
+        # On Hit Events
+        for status_id, stack in list(attacker.statuses.items()):
+            if status_id in STATUS_REGISTRY: STATUS_REGISTRY[status_id].on_hit(attacker_ctx, stack)
 
+        for pid in attacker.passives:
+            if pid in PASSIVE_REGISTRY: PASSIVE_REGISTRY[pid].on_hit(attacker_ctx)
+        for pid in attacker.talents:
+            if pid in TALENT_REGISTRY: TALENT_REGISTRY[pid].on_hit(attacker_ctx)
+
+        self._process_card_scripts("on_hit", attacker_ctx)
+
+        # === РАСЧЕТ УРОНА ===
         raw_damage = attacker_ctx.final_value
 
-        dmg_bonus = attacker.get_status("dmg_up") - attacker.get_status("dmg_down")
-        dmg_bonus += attacker.modifiers.get("damage_deal", 0)
+        # Собираем бонусы для лога
+        dmg_bonus_status = attacker.get_status("dmg_up") - attacker.get_status("dmg_down")
+        dmg_bonus_mods = attacker.modifiers.get("damage_deal", 0)
 
         incoming_mod = defender.get_status("fragile") + defender.get_status("vulnerability") - defender.get_status(
             "protection")
-        incoming_mod -= defender.modifiers.get("damage_take", 0)
+        incoming_mod_stats = defender.modifiers.get("damage_take", 0)  # Например -dmg от Кожи
+        incoming_total = incoming_mod - incoming_mod_stats
 
-        total_amt = max(0, raw_damage + dmg_bonus + incoming_mod)
+        total_base = max(0, raw_damage + dmg_bonus_status + dmg_bonus_mods + incoming_total)
 
-        # Процентные модификаторы (Дым и т.д.)
-        pct_modifier = 0.0
-        for status_id, stack in defender.statuses.items():
-            if status_id in STATUS_REGISTRY:
-                modifier_func = getattr(STATUS_REGISTRY[status_id], "get_damage_modifier", None)
-                if modifier_func:
-                    pct_modifier += modifier_func(defender, stack)
-
-        if pct_modifier != 0.0:
-            original = total_amt
-            total_amt = int(total_amt * (1.0 + pct_modifier))
-            pct_str = f"{pct_modifier * 100:+.0f}%"
-            attacker_ctx.log.append(f"🌫️ Mods: {original} -> **{total_amt}** ({pct_str})")
-
+        # Множители (Крит и Резисты)
+        final_amt = total_base
         if attacker_ctx.damage_multiplier != 1.0:
-            total_amt = int(total_amt * attacker_ctx.damage_multiplier)
-            attacker_ctx.log.append(f"⚡ Крит x{attacker_ctx.damage_multiplier}!")
+            final_amt = int(final_amt * attacker_ctx.damage_multiplier)
 
-        self._deal_direct_damage(attacker_ctx, defender, total_amt, dmg_type)
+        # Резисты (для лога берем HP резист, даже если урон пойдет в Stagger при резисте)
+        dtype_name = attacker_ctx.dice.dtype.value.lower()
+        resist_val = getattr(defender.hp_resists, dtype_name, 1.0)
 
+        # Формируем строку с объяснением "почему 16?"
+        # Пример: "4(Roll) + 10(Mod) + 2(Fragile) x 1.0(Resist)"
+        math_parts = [f"{raw_damage}"]
+        if dmg_bonus_status + dmg_bonus_mods != 0:
+            math_parts.append(f"{dmg_bonus_status + dmg_bonus_mods:+} (Atk)")
+        if incoming_total != 0:
+            math_parts.append(f"{incoming_total:+} (Def)")
+
+        formula = "".join(math_parts)
+        if attacker_ctx.damage_multiplier != 1.0:
+            formula = f"({formula}) x{attacker_ctx.damage_multiplier} (Crit)"
+        if resist_val != 1.0:
+            formula += f" x{resist_val} (Res)"
+
+        # Наносим урон
+        if dmg_type == "hp":
+            # Учитываем резист внутри _deal_direct_damage, но для лога выводим подсказку тут
+            self._deal_direct_damage(attacker_ctx, defender, total_base, dmg_type)
+            # Дописываем формулу в лог
+            attacker_ctx.log[-1] += f" [{formula}]"
+
+        elif dmg_type == "stagger":
+            self._deal_direct_damage(attacker_ctx, defender, total_base, dmg_type)
+
+        # Stagger damage logic (если не заблочено)
         if dmg_type == "hp" and not defender.is_staggered():
-            dtype_name = attacker_ctx.dice.dtype.value.lower()
-            # Stagger урон от HP атаки тоже считаем через hp_resists, если нужно единообразие?
-            # В оригинале HP атака наносит доп. Stagger урон.
-            # Оставим тут пока stagger_resists или заменим на hp_resists, если ты хочешь ПОЛНОЕ соответствие.
-            # Судя по запросу "stagger damage dealt... same as normal resists", заменим и тут.
-            res_stagger = getattr(defender.hp_resists, dtype_name, 1.0)
-
-            stg_dmg = int(total_amt * res_stagger)
-            defender.current_stagger -= stg_dmg
+            if defender.get_status("red_lycoris") <= 0:
+                res_stagger = getattr(defender.stagger_resists, dtype_name, 1.0)
+                stg_dmg = int(total_base * res_stagger)
+                defender.current_stagger -= stg_dmg

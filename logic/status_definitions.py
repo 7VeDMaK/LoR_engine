@@ -10,7 +10,7 @@ class StatusEffect:
     # Базовые методы-заглушки
     def on_use(self, unit, card, log_func): pass
 
-    def on_combat_start(self, unit, log_func): pass
+    def on_combat_start(self, unit, log_func, **kwargs): pass
 
     def on_combat_end(self, unit, log_func): pass
 
@@ -145,16 +145,14 @@ class RedLycorisStatus(StatusEffect):
     id = "red_lycoris"
 
     def on_calculate_stats(self, unit) -> dict:
-        # Даем огромную инициативу, чтобы "сравняться" (быть не медленнее)
-        # А также дикий резист к урону, чтобы эмулировать иммунитет через modifiers
+        # initiative 999 - чтобы ходить первым
+        # damage_take 9999 - поглощение любого урона (на случай если жесткий иммунитет не сработает)
         return {
-            "initiative": 999,       # Всегда первый (но prevent_redirection не даст перехватить)
-            "damage_take": -9999,    # Технический иммунитет к урону
+            "initiative": 999,
+            "damage_take": 9999
         }
 
     def on_turn_end(self, unit, stack) -> list[str]:
-        # По окончании действия (когда duration станет 0 и статус пропадет)
-        # Логика "Добавить 0.5 S-клеток" пока пропускаем или добавляем в лог
         return []
 
 
