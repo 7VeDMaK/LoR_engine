@@ -3,7 +3,7 @@ import streamlit as st
 from core.models import Unit  # models.py теперь просто импортирует Unit из core/unit.py
 from core.unit_library import UnitLibrary
 from ui.styles import apply_styles
-from ui.simulator import render_simulator_page
+from ui.simulator.simulator import render_simulator_page
 from ui.editor import render_editor_page
 from ui.profile import render_profile_page
 

@@ -1,13 +1,6 @@
 # logic/talents/__init__.py
-from logic.talents.definitions import (
-    TalentNakedDefense,
-    TalentVengefulPayback,
-    TalentBerserkerRage,
-    TalentCalmMind,
-    TalentHidingInSmoke,
-    TalentSmokeUniversality,
-    TalentFrenzy
-)
+from logic.talents.branch_5_berseker import *
+from logic.talents.branch_6_smoker import *
 
 TALENT_REGISTRY = {
     "naked_defense": TalentNakedDefense(),

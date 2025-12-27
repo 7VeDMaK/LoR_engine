@@ -6,12 +6,12 @@ from ui.components import render_unit_stats, render_combat_info
 from ui.styles import TYPE_ICONS
 
 # Импорт логики и компонентов из новых файлов
-from ui.simulator_logic import (
+from ui.simulator.simulator_logic import (
     roll_phase, step_start, step_next, step_finish,
     execute_combat_auto, reset_game,
     sync_state_from_widgets, precalculate_interactions
 )
-from ui.simulator_components import render_slot_strip, render_active_abilities
+from ui.simulator.simulator_components import render_slot_strip, render_active_abilities
 
 
 def render_simulator_page():
