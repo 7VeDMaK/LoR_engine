@@ -64,7 +64,10 @@
     "talents": [
         "keep_it_together",
         "center_of_balance",
-        "revenge"
+        "revenge",
+        "not_great_attention",
+        "slaughter",
+        "fast_and_silent"
     ],
     "level_rolls": {
         "3": {

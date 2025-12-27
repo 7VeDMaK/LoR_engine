@@ -2,7 +2,7 @@
 from logic.talents.branch_1_mindgames import TalentKeepItTogether, TalentCenterOfBalance
 from logic.talents.branch_5_berseker import *
 from logic.talents.branch_6_smoker import *
-from logic.talents.branch_9_shadow import TalentRevenge
+from logic.talents.branch_9_shadow import TalentRevenge, TalentNotGreatAttention, TalentSlaughter, TalentFastAndSilent
 
 TALENT_REGISTRY = {
     "naked_defense": TalentNakedDefense(),
@@ -15,4 +15,7 @@ TALENT_REGISTRY = {
     "keep_it_together": TalentKeepItTogether(), # <--- Регистрация
     "center_of_balance": TalentCenterOfBalance(),
     "revenge": TalentRevenge(),
+    "not_great_attention": TalentNotGreatAttention(),
+    "slaughter": TalentSlaughter(),
+    "fast_and_silent": TalentFastAndSilent(),
 }
