@@ -6,7 +6,7 @@ from io import StringIO
 from core.models import Unit
 from core.library import Library  # <--- ОБЯЗАТЕЛЬНО
 from logic.clash import ClashSystem
-from logic.passives import PASSIVE_REGISTRY
+from logic.passives.__init__ import PASSIVE_REGISTRY
 from logic.statuses import StatusManager
 from logic.talents import TALENT_REGISTRY
 

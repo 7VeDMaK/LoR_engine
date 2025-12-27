@@ -6,7 +6,7 @@ from core.library import Library
 from core.models import Unit
 from core.unit_library import UnitLibrary
 # ИМПОРТИРУЕМ ОБА РЕЕСТРА
-from logic.passives import PASSIVE_REGISTRY
+from logic.passives.__init__ import PASSIVE_REGISTRY
 from logic.talents import TALENT_REGISTRY
 
 ATTR_LABELS = {"strength": "Сила", "endurance": "Стойкость", "agility": "Ловкость", "wisdom": "Мудрость",

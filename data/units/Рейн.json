@@ -12,7 +12,7 @@
     },
     "deck": [],
     "base_stats": {
-        "current_hp": 148,
+        "current_hp": 100,
         "current_sp": 137,
         "current_stagger": 75
     },
@@ -55,7 +55,9 @@
         "engineering": 0,
         "programming": 0
     },
-    "passives": [],
+    "passives": [
+        "s_cells"
+    ],
     "talents": [],
     "level_rolls": {
         "3": {

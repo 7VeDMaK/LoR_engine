@@ -1,7 +1,7 @@
 import streamlit as st
 from core.models import Unit
 from core.library import Library
-from logic.passives import PASSIVE_REGISTRY
+from logic.passives.__init__ import PASSIVE_REGISTRY
 from logic.talents import TALENT_REGISTRY
 from ui.components import _format_script_text
 from ui.styles import TYPE_ICONS, TYPE_COLORS

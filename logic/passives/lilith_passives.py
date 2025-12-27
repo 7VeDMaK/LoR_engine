@@ -1,46 +1,11 @@
-from logic.context import RollContext
-from core.enums import DiceType
-from core.models import Dice
-
-
-class BasePassive:
-    id = "base"
-    name = "Base Passive"
-    description = "No description"
-    is_active_ability = False
-    cooldown = 0
-    duration = 0
-
-    def on_combat_start(self, unit, log_func): pass
-
-    def on_combat_end(self, unit, log_func): pass
-
-    def on_round_start(self, unit, log_func): pass
-
-    def on_round_end(self, unit, log_func): pass
-
-    def on_roll(self, ctx: RollContext): pass
-
-    def on_clash_win(self, ctx: RollContext): pass
-
-    def on_clash_lose(self, ctx: RollContext): pass
-
-    def on_hit(self, ctx: RollContext): pass
-
-    def activate(self, unit, log_func): pass
-
-    def modify_stats(self, unit, stats: dict, logs: list): pass
-
-    def modify_clash_interaction(self, ctx, interaction, loser_ctx): pass
-
-    def modify_clash_interaction_loser(self, ctx, interaction, winner_ctx): pass
-
-    def get_virtual_defense_die(self, unit, incoming_die): return None
-
-
 # ==========================================
 # Махнуть хвостиком (Wag Tail)
 # ==========================================
+from core.enums import DiceType
+from logic.context import RollContext
+from logic.passives.base_passive import BasePassive
+
+
 class PassiveWagTail(BasePassive):
     id = "wag_tail"
     name = "Махнуть хвостиком"
@@ -168,13 +133,3 @@ class PassiveLiveFastDieYoung(BasePassive):
         if ctx.dice.dtype in [DiceType.SLASH, DiceType.PIERCE, DiceType.BLUNT]:
             ctx.source.add_status("smoke", 1, duration=99)
             ctx.log.append(f"⚡ **{self.name}**: +1 Дым за победу")
-
-# === РЕГИСТРАЦИЯ ===
-PASSIVE_REGISTRY = {
-    "hedonism": PassiveHedonism(),
-    "wag_tail": PassiveWagTail(),
-    "backstreet_demon": PassiveBackstreetDemon(),
-    "daughter_of_backstreets": PassiveDaughterOfBackstreets(),
-    "blessing_of_wind": PassiveBlessingOfWind(),
-    "live_fast_die_young": PassiveLiveFastDieYoung(), # <--- NEW
-}

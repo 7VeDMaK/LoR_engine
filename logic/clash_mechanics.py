@@ -3,7 +3,7 @@ from core.models import Dice, DiceType
 from logic.context import RollContext
 from logic.status_definitions import STATUS_REGISTRY
 from logic.card_scripts import SCRIPTS_REGISTRY
-from logic.passives import PASSIVE_REGISTRY
+from logic.passives.__init__ import PASSIVE_REGISTRY
 from logic.talents import TALENT_REGISTRY
 
 

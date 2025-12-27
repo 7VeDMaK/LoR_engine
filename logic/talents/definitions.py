@@ -1,10 +1,8 @@
 # logic/talents/definitions.py
-import copy
 
-from core.dice import Dice
-from logic.passives import BasePassive
+from logic.passives.base_passive import BasePassive
 from logic.context import RollContext
-from core.enums import DiceType
+
 
 # ==========================================
 # 5.1 Встроенная Броня
